@@ -30,8 +30,6 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
   <input id="timeStart" type="time">
   <label>Одометр на начало</label>
   <input id="odoStart" type="number" inputmode="decimal">
-  <label>Заправка, л (если была)</label>
-  <input id="refuel" type="number" inputmode="decimal">
   <button onclick="startShift()">Начать смену</button>
 </div>
 
@@ -50,12 +48,14 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
   <datalist id="docNamesList"></datalist>
   <label>Куда везём (мед-точка)</label><input id="docPlace" list="medPointsList">
   <datalist id="medPointsList"></datalist>
-  <label>Назначенное время посадки</label><input id="docTimeApp" type="time">
+  <label>Назначенное время посадка</label><input id="docTimeApp" type="time">
   <label>Фактическое время посадки</label><input id="docTimeBoard" type="time">
   <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить врача</button>
 </div>
 
 <div class="card" id="finishCard" style="display:none">
+  <label>Заправка, л (если была)</label>
+  <input id="refuel" type="number" inputmode="decimal">
   <label>Время окончания смены</label>
   <input id="timeEnd" type="time">
   <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>

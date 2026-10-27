@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbzTPwKpo1S8XlKC4liDipa2Cqi7SqqwKzJBzGMyOXBAT25UZKeO-aQXyzZR6F4Eg_9_/exec'; // ← верни свой URL!
+const API_URL = 'https://script.google.com/macros/s/ТВОЙ_КОД/exec'; // ← свой URL!
 
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
@@ -69,8 +69,7 @@ function startShift() {
   const odo = parseFloat($('odoStart').value.replace(',', '.'));
   if (!dateStr || !tStart) { msg('Укажи дату и время начала смены'); return; }
   if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
-  const refuel = $('refuel').value ? parseFloat($('refuel').value.replace(',', '.')) : '';
-  shift = { id: uid(), driverId: $('driverSel').value, date: dateStr, timeStart: tStart, odoStart: odo, refuel: refuel };
+  shift = { id: uid(), driverId: $('driverSel').value, date: dateStr, timeStart: tStart, odoStart: odo };
   segments = [];
   doctorVisits = [];
   $('startCard').style.display = 'none';
@@ -121,6 +120,8 @@ async function finishShift() {
   if (!segments.length) { msg('Добавь хотя бы один отрезок'); return; }
   const tEnd = $('timeEnd').value;
   if (!tEnd) { msg('Укажи время окончания смены'); return; }
+  // Заправка — по факту, перед завершением смены; может быть пустой
+  const refuel = $('refuel').value ? parseFloat($('refuel').value.replace(',', '.')) : '';
   const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
   const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
   const highwayKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
@@ -132,7 +133,7 @@ async function finishShift() {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ records: [
-        { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm, route: '', type: 'shift' },
+        { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm, route: '', refuel: refuel, type: 'shift' },
         ...segments.map(s => ({ ...s, type: 'segment' })),
         ...doctorVisits
       ] })
