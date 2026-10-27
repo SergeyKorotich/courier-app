@@ -9,9 +9,10 @@ const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + St
 
 let shift = null;          // текущая открытая смена
 let segments = [];         // отрезки этой смены
-let doctorVisits = [];     // визиты к врачам этой смены
+let doctorVisits = [];     // перевозки врачей этой смены
 let points = ['ОФИС'];     // кэш справочника точек
-let medPoints = [];        // кэш справочника мед-точек
+let medPoints = [];        // кэш мед-точек
+let docNames = [];         // кэш справочника ФИО врачей
 
 async function loadDrivers() {
   try {
@@ -21,20 +22,20 @@ async function loadDrivers() {
     if (Array.isArray(out.points) && out.points.length) {
       points = Array.from(new Set(['ОФИС'].concat(out.points)));
     }
-    if (Array.isArray(out.medPoints)) {
-      medPoints = Array.from(new Set(out.medPoints));
-    }
-    renderPoints();
-    renderMedPoints();
+    if (Array.isArray(out.medPoints)) medPoints = Array.from(new Set(out.medPoints));
+    if (Array.isArray(out.docNames)) docNames = Array.from(new Set(out.docNames));
+    renderPoints(); renderMedPoints(); renderDocNames();
   } catch (e) { msg('Не удалось загрузить данные: ' + e.message); }
 }
 
 function renderPoints() {
   $('pointsList').innerHTML = points.slice().sort().map(p => `<option value="${p}">`).join('');
 }
-
 function renderMedPoints() {
   $('medPointsList').innerHTML = medPoints.slice().sort().map(p => `<option value="${p}">`).join('');
+}
+function renderDocNames() {
+  $('docNamesList').innerHTML = docNames.slice().sort().map(p => `<option value="${p}">`).join('');
 }
 
 // Каноническая форма: «МОЖГА»/«можга» → «Можга», «офис» → «ОФИС»
@@ -46,27 +47,15 @@ function canonName(s) {
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-// Новая точка: в локальный список сразу, на сервер — в фоне
-function rememberPoint(name) {
-  if (!name || points.includes(name)) return;
-  points.push(name);
-  renderPoints();
+// Новая запись в справочник: в локальный кэш сразу, на сервер — в фоне
+function rememberRef(list, render, prefix, type, name) {
+  if (!name || list.includes(name)) return;
+  list.push(name);
+  render();
   fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ records: [{ id: 'p-' + uid(), type: 'point', name: name }] })
-  });
-}
-
-// Новая мед-точка: отдельный справочник, та же схема
-function rememberMedPoint(name) {
-  if (!name || medPoints.includes(name)) return;
-  medPoints.push(name);
-  renderMedPoints();
-  fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ records: [{ id: 'm-' + uid(), type: 'medpoint', name: name }] })
+    body: JSON.stringify({ records: [{ id: prefix + uid(), type: type, name: name }] })
   });
 }
 
@@ -93,7 +82,8 @@ function addSegment() {
   const segmentKm = Math.max(0, km - prevKm);
   const routeType = (from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса';
   segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, ts: new Date().toISOString() });
-  rememberPoint(from); rememberPoint(to);
+  rememberRef(points, renderPoints, 'p-', 'point', from);
+  rememberRef(points, renderPoints, 'p-', 'point', to);
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
   msg(`Отрезок: ${segmentKm} км (${routeType}). Всего отрезков: ${segments.length}`);
 }
@@ -103,7 +93,7 @@ function addDoctorVisit() {
   const place = canonName($('docPlace').value);
   const tApp = $('docTimeApp').value;
   const tBoard = $('docTimeBoard').value;
-  if (!doctor || !place) { msg('Укажи врача и мед-точку'); return; }
+  if (!doctor || !place) { msg('Укажи врача и куда везём'); return; }
   const rid = 'r-' + uid();
   doctorVisits.push({
     id: rid, type: 'doctor', date: shift.date,
@@ -111,10 +101,11 @@ function addDoctorVisit() {
     timeAppointed: tApp, timeBoarding: tBoard,
     recordId: rid, shiftId: shift.id
   });
-  rememberMedPoint(place);
+  rememberRef(medPoints, renderMedPoints, 'm-', 'medpoint', place);
+  rememberRef(docNames, renderDocNames, 'd-', 'docname', doctor);
   $('docName').value = ''; $('docPlace').value = '';
   $('docTimeApp').value = ''; $('docTimeBoard').value = '';
-  msg(`Визит записан (всего: ${doctorVisits.length}). Уйдёт вместе со сменой.`);
+  msg(`Перевозка врача записана (всего: ${doctorVisits.length}). Уйдёт вместе со сменой.`);
 }
 
 async function finishShift() {
@@ -135,7 +126,7 @@ async function finishShift() {
     });
     const out = await res.json();
     if (!out.ok) throw new Error(out.error || 'ошибка сервера');
-    msg(`Отправлено: ${out.processed.length} записей (отрезки + визиты). Проверь Shifts, SegmentsAPI и Doctor.`);
+    msg(`Отправлено: ${out.processed.length} записей. Проверь Shifts, SegmentsAPI и Doctor.`);
     shift = null; segments = []; doctorVisits = [];
     $('shiftCard').style.display = 'none';
     $('docCard').style.display = 'none';

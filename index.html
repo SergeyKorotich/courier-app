@@ -30,7 +30,7 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
 </div>
 
 <div class="card" id="shiftCard" style="display:none">
-  <h2 id="shiftTitle"></h2>
+  <h2>Отрезок</h2>
   <label>Откуда</label><input id="segFrom" list="pointsList" value="ОФИС">
   <label>Куда</label><input id="segTo" list="pointsList">
   <datalist id="pointsList"></datalist>
@@ -39,13 +39,14 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
 </div>
 
 <div class="card" id="docCard" style="display:none">
-  <h2>Запись к врачу</h2>
-  <label>Врач (ФИО)</label><input id="docName">
-  <label>Куда (мед-точка)</label><input id="docPlace" list="medPointsList">
+  <h2>Перевозка врача</h2>
+  <label>Врач (ФИО)</label><input id="docName" list="docNamesList">
+  <datalist id="docNamesList"></datalist>
+  <label>Куда везём (мед-точка)</label><input id="docPlace" list="medPointsList">
   <datalist id="medPointsList"></datalist>
-  <label>Время записи</label><input id="docTimeApp" type="time">
-  <label>Время посадки</label><input id="docTimeBoard" type="time">
-  <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить визит</button>
+  <label>Назначенное время посадки</label><input id="docTimeApp" type="time">
+  <label>Фактическое время посадки</label><input id="docTimeBoard" type="time">
+  <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить врача</button>
 </div>
 
 <div class="card" id="finishCard" style="display:none">
