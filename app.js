@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/ТВОЙ_КОД/exec'; // ← свой URL!
+const API_URL = 'https://script.google.com/macros/s/AKfycbzTPwKpo1S8XlKC4liDipa2Cqi7SqqwKzJBzGMyOXBAT25UZKeO-aQXyzZR6F4Eg_9_/exec'; // ← свой URL!
 
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
@@ -6,6 +6,8 @@ const uid = () => Date.now() + '-' + Math.floor(Math.random() * 1e6);
 const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
 // Локальная дата (не UTC) — иначе вечером дата уезжает на день назад
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+const hhmmToMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
+const minToHHMM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 
 let shift = null;          // текущая открытая смена
 let segments = [];         // отрезки этой смены
@@ -49,6 +51,64 @@ function canonName(s, list) {
   if (found) return found;
   return lower.split(' ')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// ОФИС и Ижевск — эквивалентные точки (как в старой системе)
+function areEquivalentPoints(p1, p2) {
+  const a = String(p1 || '').trim().toUpperCase();
+  const b = String(p2 || '').trim().toUpperCase();
+  return (a === 'ОФИС' && b === 'ИЖЕВСК') || (a === 'ИЖЕВСК' && b === 'ОФИС');
+}
+
+// Сжатие маршрута: подряд идущие одинаковые точки схлопываются,
+// ОФИС/Ижевск считаются одним пунктом, Ижевск в конце становится ОФИС
+function compressRoute(pointsList) {
+  if (!pointsList || !pointsList.length) return '';
+  const result = [pointsList[0]];
+  for (let i = 1; i < pointsList.length; i++) {
+    const last = result[result.length - 1];
+    const cur = pointsList[i];
+    if (cur === last) continue;
+    if (areEquivalentPoints(last, cur)) continue;
+    result.push(cur);
+  }
+  if (result.length && result[result.length - 1] === 'ИЖЕВСК') result[result.length - 1] = 'ОФИС';
+  return result.join(', ');
+}
+
+// Сводка по врачам: пункт — при первом упоминании, врачи одного пункта
+// через запятую, отклонение от назначенного времени в скобках.
+// Учитываются только перевозки в пункты, где машина реально была.
+function buildDoctorText(visitedPoints) {
+  const pointSet = new Set(visitedPoints.map(p => String(p || '').trim().toUpperCase()));
+  const shownPlaces = new Set();
+  const entries = [];
+  doctorVisits.forEach(v => {
+    const place = String(v.place || '').trim().toUpperCase();
+    if (!pointSet.has(place)) return;
+    const diff = hhmmToMin(v.timeBoarding) - hhmmToMin(v.timeAppointed);
+    let suffix = '';
+    if (diff > 0) suffix = ` (опоздание ${diff} мин)`;
+    else if (diff < 0) suffix = ` (раньше на ${-diff} мин)`;
+    const first = !shownPlaces.has(place);
+    shownPlaces.add(place);
+    entries.push({ place: place, text: (first ? place + ' ' : '') + v.doctor + ' ' + v.timeBoarding, suffix: suffix });
+  });
+  let text = '';
+  entries.forEach((e, i) => {
+    const sep = i === 0 ? '' : (e.place === entries[i - 1].place ? ', ' : '\n');
+    text += sep + e.text + e.suffix;
+  });
+  return text;
+}
+
+// Продолжительность смены; смена через полночь считается корректно
+function durationMin(tStart, tEnd) {
+  const a = hhmmToMin(tStart), b = hhmmToMin(tEnd);
+  if (isNaN(a) || isNaN(b)) return 0;
+  let d = b - a;
+  if (d < 0) d += 24 * 60;
+  return d;
 }
 
 // Новая запись в справочник: в локальный кэш сразу, на сервер — в фоне
@@ -126,6 +186,21 @@ async function finishShift() {
   const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
   const highwayKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
   const odoEnd = Number(shift.odoStart) + totalKm;
+
+  // Маршрут и врачи — как в старой системе
+  const visitedPoints = [];
+  const routePoints = [];
+  segments.forEach(s => {
+    visitedPoints.push(s.from, s.to);
+    if (s.from !== s.to) {           // петля X→X не добавляет точки маршрута
+      if (!routePoints.length) routePoints.push(s.from);
+      routePoints.push(s.to);
+    }
+  });
+  const route = compressRoute(routePoints);
+  const doctorInfo = buildDoctorText(visitedPoints);
+  const dMin = durationMin(shift.timeStart, tEnd);
+
   msg('Отправляю…');
   try {
     // text/plain — иначе Apps Script не пройдёт CORS
@@ -133,7 +208,10 @@ async function finishShift() {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ records: [
-        { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm, route: '', refuel: refuel, type: 'shift' },
+        { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
+          route: route, doctor: doctorInfo,
+          duration: minToHHMM(dMin), durationMin: dMin,
+          refuel: refuel, status: 'Завершено', type: 'shift' },
         ...segments.map(s => ({ ...s, type: 'segment' })),
         ...doctorVisits
       ] })
@@ -142,7 +220,7 @@ async function finishShift() {
     if (!out.ok) throw new Error(out.error || 'ошибка сервера');
     // Перенос одометра в следующую смену — как старая clearForm
     localStorage.setItem('lastOdoEnd', String(odoEnd));
-    msg(`Отправлено: ${out.processed.length} записей. Проверь Shifts, SegmentsAPI и Doctor.`);
+    msg(`Отправлено: ${out.processed.length} записей.\nМаршрут: ${route}` + (doctorInfo ? `\nВрачи: ${doctorInfo}` : ''));
     shift = null; segments = []; doctorVisits = [];
     $('shiftCard').style.display = 'none';
     $('docCard').style.display = 'none';
