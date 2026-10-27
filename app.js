@@ -14,29 +14,77 @@ let doctorVisits = [];     // перевозки врачей этой смен�
 let points = ['ОФИС'];     // кэш справочника точек
 let medPoints = [];        // кэш мед-точек
 let docNames = [];         // кэш справочника ФИО врачей
-let cars = [];             // кэш справочника автомобилей
+let drivers = [];          // водители с их автомобилями (сгруппированы)
+let carEditMode = null;    // 'new' | 'edit' | null
+
+const NEW_DRIVER = '__new';
+const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
+
+// Единая отправка записей на сервер
+async function postRecords(records) {
+  // text/plain — иначе Apps Script не пройдёт CORS
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ records: records })
+  });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error || 'ошибка сервера');
+  return out;
+}
+
+function currentDriver() {
+  const v = $('driverSel').value;
+  if (v === NEW_DRIVER) return null;
+  return drivers[Number(v)] || null;
+}
 
 async function loadDrivers() {
   try {
     const out = await (await fetch(API_URL)).json();
-    $('driverSel').innerHTML = out.drivers.map(d =>
-      `<option value="${d.id}">${d.fio}</option>`).join('');
-    if (Array.isArray(out.cars)) cars = out.cars;
-    renderCars();
+    drivers = Array.isArray(out.drivers) ? out.drivers : [];
     if (Array.isArray(out.points) && out.points.length) {
       points = Array.from(new Set(['ОФИС'].concat(out.points)));
     }
     if (Array.isArray(out.medPoints)) medPoints = Array.from(new Set(out.medPoints));
     if (Array.isArray(out.docNames)) docNames = Array.from(new Set(out.docNames));
     renderPoints(); renderMedPoints(); renderDocNames();
+    // Восстанавливаем выбор водителя и машины с прошлого раза
+    renderDriverSelect(localStorage.getItem('lastDriver'));
+    selectCarByLabel(localStorage.getItem('lastCar'));
   } catch (e) { msg('Не удалось загрузить данные: ' + e.message); }
 }
 
-function renderCars() {
-  $('carSel').innerHTML = cars.length
-    ? cars.map(c => `<option value="${c.id}">${c.name} ${c.plate}</option>`).join('')
-    : '<option value="">— нет автомобилей —</option>';
+function renderDriverSelect(fioToSelect) {
+  $('driverSel').innerHTML = (drivers.length
+    ? drivers.map((d, i) => `<option value="${i}">${d.fio}</option>`).join('')
+    : '<option value="">— нет водителей —</option>')
+    + `<option value="${NEW_DRIVER}">➕ Добавить водителя…</option>`;
+  if (fioToSelect) {
+    const idx = drivers.findIndex(d => d.fio.toLowerCase() === String(fioToSelect).toLowerCase());
+    if (idx >= 0) $('driverSel').value = String(idx);
+  }
+  renderCars();
 }
+
+// Список автомобилей меняется при смене водителя;
+// по умолчанию — первая машина водителя
+function renderCars() {
+  const d = currentDriver();
+  const cars = (d && d.cars) || [];
+  $('carSel').innerHTML = cars.length
+    ? cars.map(c => `<option value="${carLabel(c)}">${carLabel(c)}</option>`).join('')
+    : '<option value="">— нет автомобилей —</option>';
+  $('carSel').innerHTML += '<option value="' + NEW_DRIVER + '">➕ Добавить автомобиль…</option>';
+  $('carPanel').style.display = 'none';
+}
+
+function selectCarByLabel(label) {
+  if (!label) return;
+  const opt = Array.from($('carSel').options).find(o => o.value === label);
+  if (opt) $('carSel').value = label;
+}
+
 function renderPoints() {
   $('pointsList').innerHTML = points.slice().sort().map(p => `<option value="${p}">`).join('');
 }
@@ -45,6 +93,88 @@ function renderMedPoints() {
 }
 function renderDocNames() {
   $('docNamesList').innerHTML = docNames.slice().sort().map(p => `<option value="${p}">`).join('');
+}
+
+function onDriverChange() {
+  if ($('driverSel').value === NEW_DRIVER) {
+    $('driverPanel').style.display = 'block';
+    $('newDriverFio').value = ''; $('newDriverCar').value = ''; $('newDriverPlate').value = '';
+  } else {
+    $('driverPanel').style.display = 'none';
+    renderCars();
+  }
+}
+
+// Новый водитель: ФИО обязательно, машина — первая в его списке
+async function saveDriver() {
+  const fio = $('newDriverFio').value.trim().replace(/\s+/g, ' ');
+  const car = $('newDriverCar').value.trim();
+  const plate = $('newDriverPlate').value.trim();
+  if (!fio) { msg('Укажи ФИО водителя'); return; }
+  if (!car && !plate) { msg('Укажи хотя бы автомобиль или госномер'); return; }
+  msg('Сохраняю водителя…');
+  try {
+    await postRecords([{ id: 'drv-' + uid(), type: 'driver', fio: fio, car: car, plate: plate }]);
+    const existing = drivers.find(d => d.fio.toLowerCase() === fio.toLowerCase());
+    const carObj = { name: car, plate: plate, row: null };
+    if (existing) existing.cars.push(carObj);
+    else drivers.push({ fio: fio, cars: [carObj] });
+    localStorage.setItem('lastDriver', fio);
+    localStorage.setItem('lastCar', carLabel(carObj));
+    $('driverPanel').style.display = 'none';
+    renderDriverSelect(fio);
+    selectCarByLabel(carLabel(carObj));
+    msg('Водитель сохранён: ' + fio);
+  } catch (e) { msg('Не сохранилось: ' + e.message); }
+}
+
+function onCarChange() {
+  if ($('carSel').value === NEW_DRIVER) openCarPanel('new');
+  else $('carPanel').style.display = 'none';
+}
+
+function openCarPanel(mode) {
+  const d = currentDriver();
+  if (!d) { msg('Сначала выбери водителя'); return; }
+  carEditMode = mode;
+  if (mode === 'edit') {
+    const c = d.cars[Number($('carSel').value)] || d.cars[0];
+    if (!c) { msg('Нет автомобиля для правки'); return; }
+    $('carNameInput').value = c.name || '';
+    $('carPlateInput').value = c.plate || '';
+  } else {
+    $('carNameInput').value = '';
+    $('carPlateInput').value = '';
+  }
+  $('carSaveBtn');
+  $('carPanel').style.display = 'block';
+}
+
+// Сохранение машины: новая строка у водителя либо правка существующей
+async function saveCar() {
+  const d = currentDriver();
+  if (!d) { msg('Сначала выбери водителя'); return; }
+  const car = $('carNameInput').value.trim();
+  const plate = $('carPlateInput').value.trim();
+  if (!car || !plate) { msg('Укажи марку и госномер'); return; }
+  const label = car + ' ' + plate;
+  msg('Сохраняю автомобиль…');
+  try {
+    if (carEditMode === 'edit') {
+      const c = d.cars[Number($('carSel').value)] || d.cars[0];
+      await postRecords([{ id: 'care-' + uid(), type: 'driveredit', row: c.row, fio: d.fio, car: car, plate: plate }]);
+      c.name = car; c.plate = plate;
+    } else {
+      await postRecords([{ id: 'car-' + uid(), type: 'driver', fio: d.fio, car: car, plate: plate }]);
+      d.cars.push({ name: car, plate: plate, row: null });
+    }
+    localStorage.setItem('lastDriver', d.fio);
+    localStorage.setItem('lastCar', label);
+    renderCars();
+    selectCarByLabel(label);
+    $('carPanel').style.display = 'none';
+    msg('Автомобиль сохранён: ' + label);
+  } catch (e) { msg('Не сохранилось: ' + e.message); }
 }
 
 // Канонизация с учётом справочника: совпадение без учёта регистра
@@ -123,34 +253,38 @@ function rememberRef(list, render, prefix, type, name) {
   if (!name || list.includes(name)) return;
   list.push(name);
   render();
-  fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ records: [{ id: prefix + uid(), type: type, name: name }] })
-  });
+  postRecords([{ id: prefix + uid(), type: type, name: name }]).catch(() => {});
 }
 
 function startShift() {
   const dateStr = $('shiftDate').value;
   const tStart = $('timeStart').value;
   const odo = parseFloat($('odoStart').value.replace(',', '.'));
-  const carId = $('carSel').value;
+  const d = currentDriver();
   if (!dateStr || !tStart) { msg('Укажи дату и время начала смены'); return; }
+  if (!d) { msg('Выбери водителя'); return; }
+  const carLabelVal = $('carSel').value;
+  if (carLabelVal === NEW_DRIVER || !carLabelVal) { msg('Выбери автомобиль'); return; }
+  const carObj = d.cars.find(c => carLabel(c) === carLabelVal);
+  if (!carObj) { msg('Выбери автомобиль'); return; }
   if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
-  if (!carId) { msg('Выбери автомобиль'); return; }
-  const carObj = cars.find(c => String(c.id) === String(carId));
   shift = {
-    id: uid(), driverId: $('driverSel').value,
-    carId: carId, carLabel: carObj ? (carObj.name + ' ' + carObj.plate) : '',
+    id: uid(),
+    driverId: d.fio,
+    carId: d.fio + '|' + carLabelVal,
+    carLabel: carLabelVal,
     date: dateStr, timeStart: tStart, odoStart: odo
   };
   segments = [];
   doctorVisits = [];
+  // Запоминаем выбор — он переживёт перезагрузку страницы
+  localStorage.setItem('lastDriver', d.fio);
+  localStorage.setItem('lastCar', carLabelVal);
   $('startCard').style.display = 'none';
   $('shiftCard').style.display = 'block';
   $('docCard').style.display = 'block';
   $('finishCard').style.display = 'block';
-  msg('Смена открыта.');
+  msg(`Смена открыта: ${d.fio}, ${carLabelVal}.`);
 }
 
 function addSegment() {
@@ -217,21 +351,14 @@ async function finishShift() {
 
   msg('Отправляю…');
   try {
-    // text/plain — иначе Apps Script не пройдёт CORS
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ records: [
-        { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
-          route: route, doctor: doctorInfo,
-          duration: minToHHMM(dMin), durationMin: dMin,
-          refuel: refuel, status: 'Завершено', type: 'shift' },
-        ...segments.map(s => ({ ...s, type: 'segment' })),
-        ...doctorVisits
-      ] })
-    });
-    const out = await res.json();
-    if (!out.ok) throw new Error(out.error || 'ошибка сервера');
+    const out = await postRecords([
+      { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
+        route: route, doctor: doctorInfo,
+        duration: minToHHMM(dMin), durationMin: dMin,
+        refuel: refuel, status: 'Завершено', type: 'shift' },
+      ...segments.map(s => ({ ...s, type: 'segment' })),
+      ...doctorVisits
+    ]);
     // Перенос одометра в следующую смену — как старая clearForm
     localStorage.setItem('lastOdoEnd', String(odoEnd));
     msg(`Отправлено: ${out.processed.length} записей.\nМаршрут: ${route}` + (doctorInfo ? `\nВрачи: ${doctorInfo}` : ''));
@@ -240,6 +367,8 @@ async function finishShift() {
     $('docCard').style.display = 'none';
     $('finishCard').style.display = 'none';
     $('startCard').style.display = 'block';
+    // Выбор водителя и автомобиля сохраняем — пользователь может
+    // сразу открыть следующую смену без повторного выбора
     $('odoStart').value = odoEnd;
     $('refuel').value = '';
     $('timeStart').value = '';

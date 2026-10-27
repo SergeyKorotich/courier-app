@@ -11,6 +11,7 @@ h2{font-size:16px;margin:4px 0}
 label{font-size:13px;color:#555}
 input,select{width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px;border:1px solid #ccd3dd;border-radius:8px}
 button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radius:8px;background:#2f6fed;color:#fff}
+button.small{background:#8892a0;padding:8px;font-size:14px}
 #msg{padding:8px;border-radius:8px;background:#eef3ff;margin:8px 0;font-size:14px;white-space:pre-wrap}
 </style>
 </head>
@@ -19,13 +20,30 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
 
 <div class="card">
   <h2>Водитель</h2>
-  <select id="driverSel"><option>— загрузка… —</option></select>
+  <select id="driverSel" onchange="onDriverChange()"><option>— загрузка… —</option></select>
+  <div id="driverPanel" style="display:none">
+    <label>ФИО нового водителя</label>
+    <input id="newDriverFio">
+    <label>Автомобиль (марка/модель)</label>
+    <input id="newDriverCar">
+    <label>Госномер</label>
+    <input id="newDriverPlate">
+    <button style="background:#2f9e6e" onclick="saveDriver()">Сохранить водителя</button>
+  </div>
 </div>
 
 <div class="card" id="startCard">
   <h2>Открыть смену</h2>
   <label>Автомобиль</label>
-  <select id="carSel"><option>— загрузка… —</option></select>
+  <select id="carSel" onchange="onCarChange()"></select>
+  <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
+  <div id="carPanel" style="display:none">
+    <label>Марка/модель</label>
+    <input id="carNameInput">
+    <label>Госномер</label>
+    <input id="carPlateInput">
+    <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
+  </div>
   <label>Дата смены</label>
   <input id="shiftDate" type="date">
   <label>Время начала смены</label>
