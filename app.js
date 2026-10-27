@@ -3,7 +3,6 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbw79XBmJF5UBjHPr5KathKL
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
 const uid = () => Date.now() + '-' + Math.floor(Math.random() * 1e6);
-const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
 // Локальная дата (не UTC) — иначе вечером дата уезжает на день назад
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const hhmmToMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
@@ -15,12 +14,15 @@ let doctorVisits = [];     // перевозки врачей этой смен�
 let points = ['ОФИС'];     // кэш справочника точек
 let medPoints = [];        // кэш мед-точек
 let docNames = [];         // кэш справочника ФИО врачей
+let cars = [];             // кэш справочника автомобилей
 
 async function loadDrivers() {
   try {
     const out = await (await fetch(API_URL)).json();
     $('driverSel').innerHTML = out.drivers.map(d =>
-      `<option value="${d.id}">${d.fio} — ${d.car} ${d.plate}</option>`).join('');
+      `<option value="${d.id}">${d.fio}</option>`).join('');
+    if (Array.isArray(out.cars)) cars = out.cars;
+    renderCars();
     if (Array.isArray(out.points) && out.points.length) {
       points = Array.from(new Set(['ОФИС'].concat(out.points)));
     }
@@ -30,6 +32,11 @@ async function loadDrivers() {
   } catch (e) { msg('Не удалось загрузить данные: ' + e.message); }
 }
 
+function renderCars() {
+  $('carSel').innerHTML = cars.length
+    ? cars.map(c => `<option value="${c.id}">${c.name} ${c.plate}</option>`).join('')
+    : '<option value="">— нет автомобилей —</option>';
+}
 function renderPoints() {
   $('pointsList').innerHTML = points.slice().sort().map(p => `<option value="${p}">`).join('');
 }
@@ -127,9 +134,16 @@ function startShift() {
   const dateStr = $('shiftDate').value;
   const tStart = $('timeStart').value;
   const odo = parseFloat($('odoStart').value.replace(',', '.'));
+  const carId = $('carSel').value;
   if (!dateStr || !tStart) { msg('Укажи дату и время начала смены'); return; }
   if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
-  shift = { id: uid(), driverId: $('driverSel').value, date: dateStr, timeStart: tStart, odoStart: odo };
+  if (!carId) { msg('Выбери автомобиль'); return; }
+  const carObj = cars.find(c => String(c.id) === String(carId));
+  shift = {
+    id: uid(), driverId: $('driverSel').value,
+    carId: carId, carLabel: carObj ? (carObj.name + ' ' + carObj.plate) : '',
+    date: dateStr, timeStart: tStart, odoStart: odo
+  };
   segments = [];
   doctorVisits = [];
   $('startCard').style.display = 'none';
