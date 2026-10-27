@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbzTPwKpo1S8XlKC4liDipa2Cqi7SqqwKzJBzGMyOXBAT25UZKeO-aQXyzZR6F4Eg_9_/exec';
+const API_URL = 'https://github.com/SergeyKorotich/courier-app.git';
 
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
