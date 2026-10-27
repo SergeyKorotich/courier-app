@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbzTPwKpo1S8XlKC4liDipa2Cqi7SqqwKzJBzGMyOXBAT25UZKeO-aQXyzZR6F4Eg_9_/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzTPwKpo1S8XlKC4liDipa2Cqi7SqqwKzJBzGMyOXBAT25UZKeO-aQXyzZR6F4Eg_9_/exec'; // ← верни свой URL!
 
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
@@ -9,14 +9,65 @@ const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + St
 
 let shift = null;          // текущая открытая смена
 let segments = [];         // отрезки этой смены
+let doctorVisits = [];     // визиты к врачам этой смены
+let points = ['ОФИС'];     // кэш справочника точек
+let medPoints = [];        // кэш справочника мед-точек
 
 async function loadDrivers() {
   try {
     const out = await (await fetch(API_URL)).json();
-    const sel = $('driverSel');
-    sel.innerHTML = out.drivers.map(d =>
+    $('driverSel').innerHTML = out.drivers.map(d =>
       `<option value="${d.id}">${d.fio} — ${d.car} ${d.plate}</option>`).join('');
-  } catch (e) { msg('Не удалось загрузить водителей: ' + e.message); }
+    if (Array.isArray(out.points) && out.points.length) {
+      points = Array.from(new Set(['ОФИС'].concat(out.points)));
+    }
+    if (Array.isArray(out.medPoints)) {
+      medPoints = Array.from(new Set(out.medPoints));
+    }
+    renderPoints();
+    renderMedPoints();
+  } catch (e) { msg('Не удалось загрузить данные: ' + e.message); }
+}
+
+function renderPoints() {
+  $('pointsList').innerHTML = points.slice().sort().map(p => `<option value="${p}">`).join('');
+}
+
+function renderMedPoints() {
+  $('medPointsList').innerHTML = medPoints.slice().sort().map(p => `<option value="${p}">`).join('');
+}
+
+// Каноническая форма: «МОЖГА»/«можга» → «Можга», «офис» → «ОФИС»
+function canonName(s) {
+  s = (s || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  if (s.toLowerCase() === 'офис') return 'ОФИС';
+  return s.toLowerCase().split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Новая точка: в локальный список сразу, на сервер — в фоне
+function rememberPoint(name) {
+  if (!name || points.includes(name)) return;
+  points.push(name);
+  renderPoints();
+  fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ records: [{ id: 'p-' + uid(), type: 'point', name: name }] })
+  });
+}
+
+// Новая мед-точка: отдельный справочник, та же схема
+function rememberMedPoint(name) {
+  if (!name || medPoints.includes(name)) return;
+  medPoints.push(name);
+  renderMedPoints();
+  fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ records: [{ id: 'm-' + uid(), type: 'medpoint', name: name }] })
+  });
 }
 
 function startShift() {
@@ -24,23 +75,46 @@ function startShift() {
   if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
   shift = { id: uid(), driverId: $('driverSel').value, date: todayISO(), timeStart: nowHM(), odoStart: odo };
   segments = [];
+  doctorVisits = [];
   $('startCard').style.display = 'none';
   $('shiftCard').style.display = 'block';
+  $('docCard').style.display = 'block';
+  $('finishCard').style.display = 'block';
   $('shiftTitle').textContent = `Смена ${shift.date} · ${shift.timeStart} · одометр ${odo}`;
   msg('Смена открыта.');
 }
 
 function addSegment() {
-  const from = $('segFrom').value.trim().toUpperCase();
-  const to = $('segTo').value.trim().toUpperCase();
+  const from = canonName($('segFrom').value);
+  const to = canonName($('segTo').value);
   const km = parseFloat(String($('segKm').value).replace(',', '.'));
   if (!from || !to || isNaN(km) || km < 0) { msg('Заполни «Откуда», «Куда» и пробег'); return; }
   const prevKm = segments.length ? segments[segments.length - 1].kmAtB : shift.odoStart;
   const segmentKm = Math.max(0, km - prevKm);
   const routeType = (from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса';
   segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, ts: new Date().toISOString() });
+  rememberPoint(from); rememberPoint(to);
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
   msg(`Отрезок: ${segmentKm} км (${routeType}). Всего отрезков: ${segments.length}`);
+}
+
+function addDoctorVisit() {
+  const doctor = $('docName').value.trim();
+  const place = canonName($('docPlace').value);
+  const tApp = $('docTimeApp').value;
+  const tBoard = $('docTimeBoard').value;
+  if (!doctor || !place) { msg('Укажи врача и мед-точку'); return; }
+  const rid = 'r-' + uid();
+  doctorVisits.push({
+    id: rid, type: 'doctor', date: shift.date,
+    doctor: doctor, place: place,
+    timeAppointed: tApp, timeBoarding: tBoard,
+    recordId: rid, shiftId: shift.id
+  });
+  rememberMedPoint(place);
+  $('docName').value = ''; $('docPlace').value = '';
+  $('docTimeApp').value = ''; $('docTimeBoard').value = '';
+  msg(`Визит записан (всего: ${doctorVisits.length}). Уйдёт вместе со сменой.`);
 }
 
 async function finishShift() {
@@ -53,14 +127,19 @@ async function finishShift() {
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ records: [{ ...shift, timeEnd: nowHM(), odoEnd, totalKm, cityKm: 0, highwayKm: 0, route: '', type: 'shift' },
-                                       ...segments.map(s => ({ ...s, type: 'segment' }))] })
+      body: JSON.stringify({ records: [
+        { ...shift, timeEnd: nowHM(), odoEnd, totalKm, cityKm: 0, highwayKm: 0, route: '', type: 'shift' },
+        ...segments.map(s => ({ ...s, type: 'segment' })),
+        ...doctorVisits
+      ] })
     });
     const out = await res.json();
     if (!out.ok) throw new Error(out.error || 'ошибка сервера');
-    msg(`Отправлено: ${out.processed.length} записей. Проверь листы Shifts и SegmentsAPI в таблице.`);
-    shift = null; segments = [];
+    msg(`Отправлено: ${out.processed.length} записей (отрезки + визиты). Проверь Shifts, SegmentsAPI и Doctor.`);
+    shift = null; segments = []; doctorVisits = [];
     $('shiftCard').style.display = 'none';
+    $('docCard').style.display = 'none';
+    $('finishCard').style.display = 'none';
     $('startCard').style.display = 'block';
   } catch (e) {
     msg('Не отправилось: ' + e.message);
