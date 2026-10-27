@@ -18,9 +18,19 @@ let drivers = [];          // водители с их автомобилями 
 let carEditMode = null;    // 'new' | 'edit' | null
 
 const NEW_DRIVER = '__new';
+const QUEUE_KEY = 'sendQueue';
+const REF_KEY = 'refCache';
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
-// Единая отправка записей на сервер
+// ================= ОФЛАЙН-ОЧЕРЕДЬ =================
+// Пакеты, которые не ушли из-за сети, копятся в localStorage
+// и отправляются при появлении сети (событие online, интервал, запуск).
+function loadQueue() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveQueue(q) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
+
 async function postRecords(records) {
   // text/plain — иначе Apps Script не пройдёт CORS
   const res = await fetch(API_URL, {
@@ -28,31 +38,87 @@ async function postRecords(records) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ records: records })
   });
-  const out = await res.json();
-  if (!out.ok) throw new Error(out.error || 'ошибка сервера');
-  return out;
+  let out = null;
+  try { out = await res.json(); } catch (e) {}
+  if (out && out.ok) return { ok: true, out: out };
+  return { ok: false, error: out ? (out.error || 'ошибка сервера') : 'некорректный ответ' };
 }
 
+// Отправка с фолбэком: сеть недоступна → пакет в очередь
+async function sendOrQueue(records) {
+  try {
+    const r = await postRecords(records);
+    if (r.ok) return { sent: true, out: r.out };
+    return { sent: false, error: r.error };
+  } catch (e) {
+    const q = loadQueue();
+    q.push({ ts: new Date().toISOString(), records: records });
+    saveQueue(q);
+    return { sent: false, queued: true };
+  }
+}
+
+async function flushQueue() {
+  const q = loadQueue();
+  if (!q.length) return;
+  let sent = 0;
+  while (q.length) {
+    try {
+      const r = await postRecords(q[0].records);
+      if (r.ok) { q.shift(); saveQueue(q); sent++; }
+      else break; // сервер отверг пакет — оставляем, не теряем данные
+    } catch (e) {
+      break;      // сеть недоступна — попробуем позже
+    }
+  }
+  if (sent) {
+    const left = loadQueue().length;
+    msg(left ? `Очередь отправлена: ${sent} пакет(ов). В очереди осталось: ${left}`
+             : `Очередь отправлена: ${sent} пакет(ов). Всё синхронизировано.`);
+  }
+}
+
+window.addEventListener('online', flushQueue);
+setInterval(flushQueue, 60000);
+
+// ================= ДАННЫЕ =================
 function currentDriver() {
   const v = $('driverSel').value;
   if (v === NEW_DRIVER) return null;
   return drivers[Number(v)] || null;
 }
 
+function applyRefs(data) {
+  drivers = Array.isArray(data.drivers) ? data.drivers : [];
+  if (Array.isArray(data.points) && data.points.length) {
+    points = Array.from(new Set(['ОФИС'].concat(data.points)));
+  }
+  if (Array.isArray(data.medPoints)) medPoints = Array.from(new Set(data.medPoints));
+  if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
+  renderPoints(); renderMedPoints(); renderDocNames();
+  // Восстанавливаем выбор водителя и машины с прошлого раза
+  renderDriverSelect(localStorage.getItem('lastDriver'));
+  selectCarByLabel(localStorage.getItem('lastCar'));
+}
+
 async function loadDrivers() {
   try {
     const out = await (await fetch(API_URL)).json();
-    drivers = Array.isArray(out.drivers) ? out.drivers : [];
-    if (Array.isArray(out.points) && out.points.length) {
-      points = Array.from(new Set(['ОФИС'].concat(out.points)));
+    // Сохраняем снапшот для работы без сети
+    localStorage.setItem(REF_KEY, JSON.stringify(out));
+    applyRefs(out);
+  } catch (e) {
+    // Нет сети (или API недоступен) — работаем на сохранённом снапшоте
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(REF_KEY) || 'null'); } catch (err) {}
+    if (cached) {
+      applyRefs(cached);
+      msg('Нет сети: работаем на сохранённых справочниках.\nСмены сохранятся в очереди и уйдут автоматически.');
+    } else {
+      msg('Не удалось загрузить данные: ' + e.message);
     }
-    if (Array.isArray(out.medPoints)) medPoints = Array.from(new Set(out.medPoints));
-    if (Array.isArray(out.docNames)) docNames = Array.from(new Set(out.docNames));
-    renderPoints(); renderMedPoints(); renderDocNames();
-    // Восстанавливаем выбор водителя и машины с прошлого раза
-    renderDriverSelect(localStorage.getItem('lastDriver'));
-    selectCarByLabel(localStorage.getItem('lastCar'));
-  } catch (e) { msg('Не удалось загрузить данные: ' + e.message); }
+  }
+  flushQueue();
 }
 
 function renderDriverSelect(fioToSelect) {
@@ -113,19 +179,18 @@ async function saveDriver() {
   if (!fio) { msg('Укажи ФИО водителя'); return; }
   if (!car && !plate) { msg('Укажи хотя бы автомобиль или госномер'); return; }
   msg('Сохраняю водителя…');
-  try {
-    await postRecords([{ id: 'drv-' + uid(), type: 'driver', fio: fio, car: car, plate: plate }]);
-    const existing = drivers.find(d => d.fio.toLowerCase() === fio.toLowerCase());
-    const carObj = { name: car, plate: plate, row: null };
-    if (existing) existing.cars.push(carObj);
-    else drivers.push({ fio: fio, cars: [carObj] });
-    localStorage.setItem('lastDriver', fio);
-    localStorage.setItem('lastCar', carLabel(carObj));
-    $('driverPanel').style.display = 'none';
-    renderDriverSelect(fio);
-    selectCarByLabel(carLabel(carObj));
-    msg('Водитель сохранён: ' + fio);
-  } catch (e) { msg('Не сохранилось: ' + e.message); }
+  const r = await sendOrQueue([{ id: 'drv-' + uid(), type: 'driver', fio: fio, car: car, plate: plate }]);
+  const existing = drivers.find(d => d.fio.toLowerCase() === fio.toLowerCase());
+  const carObj = { name: car, plate: plate, row: null };
+  if (existing) existing.cars.push(carObj);
+  else drivers.push({ fio: fio, cars: [carObj] });
+  localStorage.setItem('lastDriver', fio);
+  localStorage.setItem('lastCar', carLabel(carObj));
+  $('driverPanel').style.display = 'none';
+  renderDriverSelect(fio);
+  selectCarByLabel(carLabel(carObj));
+  msg(r.sent ? 'Водитель сохранён: ' + fio
+             : 'Нет сети: водитель записан в очередь и появится в таблице при синхронизации');
 }
 
 function onCarChange() {
@@ -146,7 +211,6 @@ function openCarPanel(mode) {
     $('carNameInput').value = '';
     $('carPlateInput').value = '';
   }
-  $('carSaveBtn');
   $('carPanel').style.display = 'block';
 }
 
@@ -159,22 +223,22 @@ async function saveCar() {
   if (!car || !plate) { msg('Укажи марку и госномер'); return; }
   const label = car + ' ' + plate;
   msg('Сохраняю автомобиль…');
-  try {
-    if (carEditMode === 'edit') {
-      const c = d.cars[Number($('carSel').value)] || d.cars[0];
-      await postRecords([{ id: 'care-' + uid(), type: 'driveredit', row: c.row, fio: d.fio, car: car, plate: plate }]);
-      c.name = car; c.plate = plate;
-    } else {
-      await postRecords([{ id: 'car-' + uid(), type: 'driver', fio: d.fio, car: car, plate: plate }]);
-      d.cars.push({ name: car, plate: plate, row: null });
-    }
-    localStorage.setItem('lastDriver', d.fio);
-    localStorage.setItem('lastCar', label);
-    renderCars();
-    selectCarByLabel(label);
-    $('carPanel').style.display = 'none';
-    msg('Автомобиль сохранён: ' + label);
-  } catch (e) { msg('Не сохранилось: ' + e.message); }
+  let r;
+  if (carEditMode === 'edit') {
+    const c = d.cars[Number($('carSel').value)] || d.cars[0];
+    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'driveredit', row: c.row, fio: d.fio, car: car, plate: plate }]);
+    c.name = car; c.plate = plate;
+  } else {
+    r = await sendOrQueue([{ id: 'car-' + uid(), type: 'driver', fio: d.fio, car: car, plate: plate }]);
+    d.cars.push({ name: car, plate: plate, row: null });
+  }
+  localStorage.setItem('lastDriver', d.fio);
+  localStorage.setItem('lastCar', label);
+  renderCars();
+  selectCarByLabel(label);
+  $('carPanel').style.display = 'none';
+  msg(r.sent ? 'Автомобиль сохранён: ' + label
+             : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
 }
 
 // Канонизация с учётом справочника: совпадение без учёта регистра
@@ -248,12 +312,12 @@ function durationMin(tStart, tEnd) {
   return d;
 }
 
-// Новая запись в справочник: в локальный кэш сразу, на сервер — в фоне
+// Новая запись в справочник: в локальный кэш сразу, на сервер — с очередью
 function rememberRef(list, render, prefix, type, name) {
   if (!name || list.includes(name)) return;
   list.push(name);
   render();
-  postRecords([{ id: prefix + uid(), type: type, name: name }]).catch(() => {});
+  sendOrQueue([{ id: prefix + uid(), type: type, name: name }]);
 }
 
 function startShift() {
@@ -349,33 +413,43 @@ async function finishShift() {
   const doctorInfo = buildDoctorText(visitedPoints);
   const dMin = durationMin(shift.timeStart, tEnd);
 
+  const batch = [
+    { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
+      route: route, doctor: doctorInfo,
+      duration: minToHHMM(dMin), durationMin: dMin,
+      refuel: refuel, status: 'Завершено', type: 'shift' },
+    ...segments.map(s => ({ ...s, type: 'segment' })),
+    ...doctorVisits
+  ];
+
   msg('Отправляю…');
-  try {
-    const out = await postRecords([
-      { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
-        route: route, doctor: doctorInfo,
-        duration: minToHHMM(dMin), durationMin: dMin,
-        refuel: refuel, status: 'Завершено', type: 'shift' },
-      ...segments.map(s => ({ ...s, type: 'segment' })),
-      ...doctorVisits
-    ]);
-    // Перенос одометра в следующую смену — как старая clearForm
-    localStorage.setItem('lastOdoEnd', String(odoEnd));
-    msg(`Отправлено: ${out.processed.length} записей.\nМаршрут: ${route}` + (doctorInfo ? `\nВрачи: ${doctorInfo}` : ''));
-    shift = null; segments = []; doctorVisits = [];
-    $('shiftCard').style.display = 'none';
-    $('docCard').style.display = 'none';
-    $('finishCard').style.display = 'none';
-    $('startCard').style.display = 'block';
-    // Выбор водителя и автомобиля сохраняем — пользователь может
-    // сразу открыть следующую смену без повторного выбора
-    $('odoStart').value = odoEnd;
-    $('refuel').value = '';
-    $('timeStart').value = '';
-    $('timeEnd').value = '';
-  } catch (e) {
-    msg('Не отправилось: ' + e.message);
-  }
+  const r = await sendOrQueue(batch);
+  // Перенос одометра в следующую смену — как старая clearForm.
+  // Ставим в обоих случаях: смена уже зафиксирована на телефоне.
+  localStorage.setItem('lastOdoEnd', String(odoEnd));
+  msg(r.sent
+    ? `Отправлено: ${r.out.processed.length} записей.\nМаршрут: ${route}` + (doctorInfo ? `\nВрачи: ${doctorInfo}` : '')
+    : (r.queued
+        ? `Нет сети: смена сохранена в телефоне и отправится автоматически.\nМаршрут: ${route}`
+        : 'Не отправилось: ' + r.error + '\nСмена сохранена в очереди.'));
+  shift = null; segments = []; doctorVisits = [];
+  $('shiftCard').style.display = 'none';
+  $('docCard').style.display = 'none';
+  $('finishCard').style.display = 'none';
+  $('startCard').style.display = 'block';
+  // Выбор водителя и автомобиля сохраняем — пользователь может
+  // сразу открыть следующую смену без повторного выбора
+  $('odoStart').value = odoEnd;
+  $('refuel').value = '';
+  $('timeStart').value = '';
+  $('timeEnd').value = '';
+}
+
+// ================= PWA =================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
 }
 
 // Подставляем одометр прошлой смены (аналог переноса B4 из старой формы)
