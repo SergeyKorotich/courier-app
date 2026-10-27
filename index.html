@@ -31,10 +31,24 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
 
 <div class="card" id="shiftCard" style="display:none">
   <h2 id="shiftTitle"></h2>
-  <label>Откуда</label><input id="segFrom" value="ОФИС">
-  <label>Куда</label><input id="segTo">
+  <label>Откуда</label><input id="segFrom" list="pointsList" value="ОФИС">
+  <label>Куда</label><input id="segTo" list="pointsList">
+  <datalist id="pointsList"></datalist>
   <label>Одометр в точке «Куда»</label><input id="segKm" type="number" inputmode="decimal">
   <button onclick="addSegment()">Добавить отрезок</button>
+</div>
+
+<div class="card" id="docCard" style="display:none">
+  <h2>Запись к врачу</h2>
+  <label>Врач (ФИО)</label><input id="docName">
+  <label>Куда (мед-точка)</label><input id="docPlace" list="medPointsList">
+  <datalist id="medPointsList"></datalist>
+  <label>Время записи</label><input id="docTimeApp" type="time">
+  <label>Время посадки</label><input id="docTimeBoard" type="time">
+  <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить визит</button>
+</div>
+
+<div class="card" id="finishCard" style="display:none">
   <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>
 </div>
 
