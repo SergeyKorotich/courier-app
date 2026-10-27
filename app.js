@@ -38,12 +38,16 @@ function renderDocNames() {
   $('docNamesList').innerHTML = docNames.slice().sort().map(p => `<option value="${p}">`).join('');
 }
 
-// Каноническая форма: «МОЖГА»/«можга» → «Можга», «офис» → «ОФИС»
-function canonName(s) {
+// Канонизация с учётом справочника: совпадение без учёта регистра
+// возвращается в написании справочника, новое имя — «Можга», ОФИС — капсом
+function canonName(s, list) {
   s = (s || '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
-  if (s.toLowerCase() === 'офис') return 'ОФИС';
-  return s.toLowerCase().split(' ')
+  const lower = s.toLowerCase();
+  if (lower === 'офис') return 'ОФИС';
+  const found = (list || []).find(p => p.toLowerCase() === lower);
+  if (found) return found;
+  return lower.split(' ')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
@@ -60,25 +64,29 @@ function rememberRef(list, render, prefix, type, name) {
 }
 
 function startShift() {
+  const dateStr = $('shiftDate').value;
+  const tStart = $('timeStart').value;
   const odo = parseFloat($('odoStart').value.replace(',', '.'));
+  if (!dateStr || !tStart) { msg('Укажи дату и время начала смены'); return; }
   if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
-  shift = { id: uid(), driverId: $('driverSel').value, date: todayISO(), timeStart: nowHM(), odoStart: odo };
+  const refuel = $('refuel').value ? parseFloat($('refuel').value.replace(',', '.')) : '';
+  shift = { id: uid(), driverId: $('driverSel').value, date: dateStr, timeStart: tStart, odoStart: odo, refuel: refuel };
   segments = [];
   doctorVisits = [];
   $('startCard').style.display = 'none';
   $('shiftCard').style.display = 'block';
   $('docCard').style.display = 'block';
   $('finishCard').style.display = 'block';
-  $('shiftTitle').textContent = `Смена ${shift.date} · ${shift.timeStart} · одометр ${odo}`;
   msg('Смена открыта.');
 }
 
 function addSegment() {
-  const from = canonName($('segFrom').value);
-  const to = canonName($('segTo').value);
+  const from = canonName($('segFrom').value, points);
+  const to = canonName($('segTo').value, points);
   const km = parseFloat(String($('segKm').value).replace(',', '.'));
   if (!from || !to || isNaN(km) || km < 0) { msg('Заполни «Откуда», «Куда» и пробег'); return; }
-  const prevKm = segments.length ? segments[segments.length - 1].kmAtB : shift.odoStart;
+  // Как в старой системе: вводится пробег с начала смены, первый отрезок — от нуля
+  const prevKm = segments.length ? segments[segments.length - 1].kmAtB : 0;
   const segmentKm = Math.max(0, km - prevKm);
   const routeType = (from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса';
   segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, ts: new Date().toISOString() });
@@ -89,11 +97,12 @@ function addSegment() {
 }
 
 function addDoctorVisit() {
-  const doctor = $('docName').value.trim();
-  const place = canonName($('docPlace').value);
+  const doctor = canonName($('docName').value, docNames);
+  const place = canonName($('docPlace').value, medPoints);
   const tApp = $('docTimeApp').value;
   const tBoard = $('docTimeBoard').value;
-  if (!doctor || !place) { msg('Укажи врача и куда везём'); return; }
+  // Как в старой системе: оба времени обязательны
+  if (!doctor || !place || !tApp || !tBoard) { msg('Укажи врача, куда везём и оба времени'); return; }
   const rid = 'r-' + uid();
   doctorVisits.push({
     id: rid, type: 'doctor', date: shift.date,
@@ -110,7 +119,11 @@ function addDoctorVisit() {
 
 async function finishShift() {
   if (!segments.length) { msg('Добавь хотя бы один отрезок'); return; }
+  const tEnd = $('timeEnd').value;
+  if (!tEnd) { msg('Укажи время окончания смены'); return; }
   const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
+  const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
+  const highwayKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
   const odoEnd = Number(shift.odoStart) + totalKm;
   msg('Отправляю…');
   try {
@@ -119,22 +132,39 @@ async function finishShift() {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ records: [
-        { ...shift, timeEnd: nowHM(), odoEnd, totalKm, cityKm: 0, highwayKm: 0, route: '', type: 'shift' },
+        { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm, route: '', type: 'shift' },
         ...segments.map(s => ({ ...s, type: 'segment' })),
         ...doctorVisits
       ] })
     });
     const out = await res.json();
     if (!out.ok) throw new Error(out.error || 'ошибка сервера');
+    // Перенос одометра в следующую смену — как старая clearForm
+    localStorage.setItem('lastOdoEnd', String(odoEnd));
     msg(`Отправлено: ${out.processed.length} записей. Проверь Shifts, SegmentsAPI и Doctor.`);
     shift = null; segments = []; doctorVisits = [];
     $('shiftCard').style.display = 'none';
     $('docCard').style.display = 'none';
     $('finishCard').style.display = 'none';
     $('startCard').style.display = 'block';
+    $('odoStart').value = odoEnd;
+    $('refuel').value = '';
+    $('timeStart').value = '';
+    $('timeEnd').value = '';
   } catch (e) {
     msg('Не отправилось: ' + e.message);
   }
 }
+
+// Подставляем одометр прошлой смены (аналог переноса B4 из старой формы)
+(function prefillOdo() {
+  const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
+  if (!isNaN(saved) && saved > 0) $('odoStart').value = saved;
+})();
+
+// Дата по умолчанию — сегодня (для обычных смен), можно поменять вручную
+(function prefillDate() {
+  $('shiftDate').value = todayISO();
+})();
 
 loadDrivers();

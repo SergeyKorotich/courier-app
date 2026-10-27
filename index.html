@@ -24,8 +24,14 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
 
 <div class="card" id="startCard">
   <h2>Открыть смену</h2>
+  <label>Дата смены</label>
+  <input id="shiftDate" type="date">
+  <label>Время начала смены</label>
+  <input id="timeStart" type="time">
   <label>Одометр на начало</label>
   <input id="odoStart" type="number" inputmode="decimal">
+  <label>Заправка, л (если была)</label>
+  <input id="refuel" type="number" inputmode="decimal">
   <button onclick="startShift()">Начать смену</button>
 </div>
 
@@ -50,6 +56,8 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radiu
 </div>
 
 <div class="card" id="finishCard" style="display:none">
+  <label>Время окончания смены</label>
+  <input id="timeEnd" type="time">
   <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>
 </div>
 
