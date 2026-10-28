@@ -490,6 +490,12 @@ function restoreState() {
   segments = saved.segments || [];
   doctorVisits = saved.doctorVisits || [];
   showWork();
+  // Продолжаем с того места, где остановились:
+  // «Откуда» = «Куда» последнего отрезка
+  if (segments.length) {
+    const last = segments[segments.length - 1];
+    $('segFrom').value = last.to;
+  }
   return true;
 }
 
@@ -503,7 +509,13 @@ if ('serviceWorker' in navigator) {
 loadDrivers().then(() => {
   const restored = restoreState();
   if (restored) {
-    msg(`Смена восстановлена: ${shift.driverId}, ${shift.carLabel}. Продолжай работу.`);
+    // Итоги по уже записанным отрезкам + последний из них
+    const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
+    const last = segments.length ? segments[segments.length - 1] : null;
+    const lastInfo = last
+      ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nПродолжай с «${last.to}».`
+      : '\nОтрезков пока нет.';
+    msg(`Смена восстановлена: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}`);
   } else {
     // Подставляем одометр прошлой смены (аналог переноса B4 из старой формы)
     const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
