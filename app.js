@@ -579,3 +579,4 @@ function finishShift() {
 
 // Хелпер для jQuery-стиля $('#id')
 function $(id) { return document.getElementById(id); }
+// что то сломалось
