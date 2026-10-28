@@ -20,41 +20,29 @@ let carEditMode = null;    // 'new' | 'edit' | null
 const NEW_DRIVER = '__new';
 const QUEUE_KEY = 'sendQueue';
 const REF_KEY = 'refCache';
-const STATE_KEY = 'appState_v1'; // ключ для сохранения состояния смены
+const STATE_KEY = 'appState_v1';
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
 // ================= СОХРАНЕНИЕ СОСТОЯНИЯ СМЕНЫ =================
+// Автосохранение после каждого действия: закрыл приложение —
+// при следующем открытии смена вернётся как была
 function saveState() {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify({
-      shift,
-      segments,
-      doctorVisits
+      shift: shift,
+      segments: segments,
+      doctorVisits: doctorVisits
     }));
-  } catch (e) {
-    console.warn('Не удалось сохранить состояние:', e);
-  }
+  } catch (e) { console.warn('Не удалось сохранить состояние:', e); }
 }
 
 function loadState() {
   const raw = localStorage.getItem(STATE_KEY);
   if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    console.warn('Ошибка парсинга состояния:', e);
-    return null;
-  }
+  try { return JSON.parse(raw); } catch (e) { return null; }
 }
 
-function clearState() {
-  localStorage.removeItem(STATE_KEY);
-}
-
-// При каждом изменении данных — сохраняем состояние
-function onDataChange() {
-  saveState();
-}
+function clearState() { localStorage.removeItem(STATE_KEY); }
 
 // ================= ОФЛАЙН-ОЧЕРЕДЬ =================
 function loadQueue() {
@@ -76,6 +64,7 @@ async function postRecords(records) {
   return { ok: false, error: out ? (out.error || 'ошибка сервера') : 'некорректный ответ' };
 }
 
+// Отправка с фолбэком: сеть недоступна → пакет в очередь
 async function sendOrQueue(records) {
   try {
     const r = await postRecords(records);
@@ -200,6 +189,7 @@ function onDriverChange() {
   }
 }
 
+// Новый водитель: ФИО обязательно, машина — первая в его списке
 async function saveDriver() {
   const fio = $('newDriverFio').value.trim().replace(/\s+/g, ' ');
   const car = $('newDriverCar').value.trim();
@@ -219,7 +209,6 @@ async function saveDriver() {
   selectCarByLabel(carLabel(carObj));
   msg(r.sent ? 'Водитель сохранён: ' + fio
              : 'Нет сети: водитель записан в очередь и появится в таблице при синхронизации');
-  onDataChange(); // сохраняем состояние (на случай, если открыта смена)
 }
 
 function onCarChange() {
@@ -232,7 +221,7 @@ function openCarPanel(mode) {
   if (!d) { msg('Сначала выбери водителя'); return; }
   carEditMode = mode;
   if (mode === 'edit') {
-    const c = d.cars[Number($('carSel').value)] || d.cars[0];
+    const c = d.cars.find(x => carLabel(x) === $('carSel').value) || d.cars[0];
     if (!c) { msg('Нет автомобиля для правки'); return; }
     $('carNameInput').value = c.name || '';
     $('carPlateInput').value = c.plate || '';
@@ -243,6 +232,7 @@ function openCarPanel(mode) {
   $('carPanel').style.display = 'block';
 }
 
+// Сохранение машины: новая строка у водителя либо правка существующей
 async function saveCar() {
   const d = currentDriver();
   if (!d) { msg('Сначала выбери водителя'); return; }
@@ -253,7 +243,7 @@ async function saveCar() {
   msg('Сохраняю автомобиль…');
   let r;
   if (carEditMode === 'edit') {
-    const c = d.cars[Number($('carSel').value)] || d.cars[0];
+    const c = d.cars.find(x => carLabel(x) === $('carSel').value) || d.cars[0];
     r = await sendOrQueue([{ id: 'care-' + uid(), type: 'driveredit', row: c.row, fio: d.fio, car: car, plate: plate }]);
     c.name = car; c.plate = plate;
   } else {
@@ -266,10 +256,11 @@ async function saveCar() {
   selectCarByLabel(label);
   $('carPanel').style.display = 'none';
   msg(r.sent ? 'Автомобиль сохранён: ' + label
-             : 'Нет сети: автомобиль записан в очередь и попадёт в таблице при синхронизации');
-  onDataChange();
+             : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
 }
 
+// Канонизация с учётом справочника: совпадение без учёта регистра
+// возвращается в написании справочника, новое имя — «Можга», ОФИС — капсом
 function canonName(s, list) {
   s = (s || '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
@@ -281,12 +272,15 @@ function canonName(s, list) {
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+// ОФИС и Ижевск — эквивалентные точки (как в старой системе)
 function areEquivalentPoints(p1, p2) {
   const a = String(p1 || '').trim().toUpperCase();
   const b = String(p2 || '').trim().toUpperCase();
   return (a === 'ОФИС' && b === 'ИЖЕВСК') || (a === 'ИЖЕВСК' && b === 'ОФИС');
 }
 
+// Сжатие маршрута: подряд идущие одинаковые точки схлопываются,
+// ОФИС/Ижевск считаются одним пунктом, Ижевск в конце становится ОФИС
 function compressRoute(pointsList) {
   if (!pointsList || !pointsList.length) return '';
   const result = [pointsList[0]];
@@ -301,6 +295,9 @@ function compressRoute(pointsList) {
   return result.join(', ');
 }
 
+// Сводка по врачам: пункт — при первом упоминании, врачи одного пункта
+// через запятую, отклонение от назначенного времени в скобках.
+// Учитываются только перевозки в пункты, где машина реально была.
 function buildDoctorText(visitedPoints) {
   const pointSet = new Set(visitedPoints.map(p => String(p || '').trim().toUpperCase()));
   const shownPlaces = new Set();
@@ -333,246 +330,184 @@ function durationMin(tStart, tEnd) {
   return d;
 }
 
-// ================= ВОССТАНОВЛЕНИЕ И УПРАВЛЕНИЕ СМЕНОЙ =================
-
-function restoreState() {
-  const saved = loadState();
-  if (!saved) return;
-
-  // Если есть активная смена — восстанавливаем её
-  if (saved.shift) {
-    shift = saved.shift;
-    segments = saved.segments || [];
-    doctorVisits = saved.doctorVisits || [];
-
-    // Блокируем выбор водителя, показываем карточки работы
-    $('driverSel').disabled = true;
-    $('newShiftForm').style.display = 'none';
-    $('workCards').style.display = 'block';
-
-    renderShiftHeader();
-    renderSegments();
-    renderDoctorVisits();
-
-    msg('Смена восстановлена из памяти: продолжай работу.');
-    return true;
-  }
-
-  return false;
+// Новая запись в справочник: в локальный кэш сразу, на сервер — с очередью
+function rememberRef(list, render, prefix, type, name) {
+  if (!name || list.includes(name)) return;
+  list.push(name);
+  render();
+  sendOrQueue([{ id: prefix + uid(), type: type, name: name }]);
 }
 
-// При старте пытаемся восстановить смену
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadDrivers();
-  const restored = restoreState();
+// ================= ПОКАЗ ЭКРАНОВ =================
+function showWork() {
+  $('startCard').style.display = 'none';
+  $('shiftCard').style.display = 'block';
+  $('docCard').style.display = 'block';
+  $('finishCard').style.display = 'block';
+  $('driverSel').disabled = true;
+  $('carSel').disabled = true;
+}
 
-  if (!restored) {
-    // Если смены нет — показываем форму старта, и можно подставить одометр из прошлой
-    $('driverSel').disabled = false;
-    $('newShiftForm').style.display = 'block';
-    $('workCards').style.display = 'none';
+function showStart() {
+  $('startCard').style.display = 'block';
+  $('shiftCard').style.display = 'none';
+  $('docCard').style.display = 'none';
+  $('finishCard').style.display = 'none';
+  $('driverSel').disabled = false;
+  $('carSel').disabled = false;
+}
 
-    const lastShift = localStorage.getItem('lastShiftEnd');
-    if (lastShift) {
-      try {
-        const prev = JSON.parse(lastShift);
-        if (prev && prev.odometerEnd) {
-          $('odometerStart').value = prev.odometerEnd;
-          msg(`Одометр подставлен из прошлой смены: ${prev.odometerEnd} км`);
-        }
-      } catch (e) { /* игнорируем, если формат битый */ }
-    }
-  }
-});
-
+// ================= СМЕНА =================
 function startShift() {
-  const driver = currentDriver();
+  const dateStr = $('shiftDate').value;
+  const tStart = $('timeStart').value;
+  const odo = parseFloat($('odoStart').value.replace(',', '.'));
+  const d = currentDriver();
+  if (!dateStr || !tStart) { msg('Укажи дату и время начала смены'); return; }
+  if (!d) { msg('Выбери водителя'); return; }
   const carLabelVal = $('carSel').value;
-  const odometer = parseInt($('odometerStart').value, 10);
-  const timeStart = $('timeStart').value;
-
-  if (!driver) { msg('Выбери водителя'); return; }
-  if (!carLabelVal || carLabelVal === NEW_DRIVER) { msg('Выбери автомобиль'); return; }
-  if (isNaN(odometer)) { msg('Укажи корректный одометр (число)'); return; }
-  if (!timeStart) { msg('Укажи время начала'); return; }
-
+  if (carLabelVal === NEW_DRIVER || !carLabelVal) { msg('Выбери автомобиль'); return; }
+  const carObj = d.cars.find(c => carLabel(c) === carLabelVal);
+  if (!carObj) { msg('Выбери автомобиль'); return; }
+  if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
   shift = {
-    id: 'sh-' + uid(),
-    driverFio: driver.fio,
+    id: uid(),
+    driverId: d.fio,
+    carId: d.fio + '|' + carLabelVal,
     carLabel: carLabelVal,
-    date: todayISO(),
-    timeStart: timeStart,
-    odometerStart: odometer,
-    timeEnd: null,
-    odometerEnd: null
+    date: dateStr, timeStart: tStart, odoStart: odo
   };
-
   segments = [];
   doctorVisits = [];
-
-  $('driverSel').disabled = true;
-  $('newShiftForm').style.display = 'none';
-  $('workCards').style.display = 'block';
-
-  renderShiftHeader();
-  msg('Смена открыта. Теперь добавляй отрезки и визиты.');
-  onDataChange(); // сохраняем состояние
-}
-
-function renderShiftHeader() {
-  if (!shift) return;
-  $('#shiftHeader').innerHTML = `
-    <div class="card">
-      <h2>Смена: ${shift.driverFio}</h2>
-      <p>Авто: ${shift.carLabel}</p>
-      <p>Дата: ${shift.date}, начало: ${shift.timeStart}</p>
-      <p>Одометр старт: ${shift.odometerStart} км</p>
-    </div>
-  `;
+  // Запоминаем выбор — он переживёт перезагрузку страницы
+  localStorage.setItem('lastDriver', d.fio);
+  localStorage.setItem('lastCar', carLabelVal);
+  saveState();
+  showWork();
+  msg(`Смена открыта: ${d.fio}, ${carLabelVal}.`);
 }
 
 function addSegment() {
-  const from = canonName($('fromPoint').value, points);
-  const to = canonName($('toPoint').value, points);
-  const km = parseInt($('kmSegment').value, 10);
-  const timeFrom = $('timeFromSegment').value;
-  const timeTo = $('timeToSegment').value;
-
-  if (!from || !to) { msg('Укажи пункты отправления и назначения'); return; }
-  if (isNaN(km) || km <= 0) { msg('Укажи корректное расстояние (число > 0)'); return; }
-  if (!timeFrom || !timeTo) { msg('Укажи время начала и конца отрезка'); return; }
-
-  const seg = {
-    id: 'seg-' + uid(),
-    from, to, km, timeFrom, timeTo
-  };
-  segments.push(seg);
-  onDataChange();
-  renderSegments();
-  $('fromPoint').value = ''; $('toPoint').value = '';
-  $('kmSegment').value = ''; $('timeFromSegment').value = ''; $('timeToSegment').value = '';
+  const from = canonName($('segFrom').value, points);
+  const to = canonName($('segTo').value, points);
+  const km = parseFloat(String($('segKm').value).replace(',', '.'));
+  if (!from || !to || isNaN(km) || km < 0) { msg('Заполни «Откуда», «Куда» и пробег'); return; }
+  // Как в старой системе: вводится пробег с начала смены, первый отрезок — от нуля
+  const prevKm = segments.length ? segments[segments.length - 1].kmAtB : 0;
+  const segmentKm = Math.max(0, km - prevKm);
+  const routeType = (from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса';
+  segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, ts: new Date().toISOString() });
+  rememberRef(points, renderPoints, 'p-', 'point', from);
+  rememberRef(points, renderPoints, 'p-', 'point', to);
+  saveState();
+  $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
+  msg(`Отрезок: ${segmentKm} км (${routeType}). Всего отрезков: ${segments.length}`);
 }
-
-function renderSegments() {
-  const list = $('#segmentsList');
-  if (!segments.length) {
-    list.innerHTML = '<p style="color:#888">Отрезков пока нет</p>';
-    return;
-  }
-  list.innerHTML = segments.map((s, i) => `
-    <div class="card" style="border-left:4px solid #2f6fed">
-      <strong>${s.from} → ${s.to}</strong>
-      <div>${s.km} км, ${s.timeFrom}–${s.timeTo}</div>
-      <button onclick="removeSegment(${i})" style="margin-top:6px;width:100%">Удалить</button>
-    </div>
-  `).join('');
-}
-
-window.removeSegment = function(i) {
-  segments.splice(i, 1);
-  onDataChange();
-  renderSegments();
-};
 
 function addDoctorVisit() {
-  const place = canonName($('docPlace').value, medPoints);
   const doctor = canonName($('docName').value, docNames);
-  const timeAppointed = $('docTimeAppointed').value;
-  const timeBoarding = $('docTimeBoarding').value;
-
-  if (!place || !doctor) { msg('Укажи пункт и врача'); return; }
-  if (!timeAppointed || !timeBoarding) { msg('Укажи время приёма и посадки'); return; }
-
-  const visit = {
-    id: 'doc-' + uid(),
-    place, doctor, timeAppointed, timeBoarding
-  };
-  doctorVisits.push(visit);
-  onDataChange();
-  renderDoctorVisits();
-  $('docPlace').value = ''; $('docName').value = '';
-  $('docTimeAppointed').value = ''; $('docTimeBoarding').value = '';
+  const place = canonName($('docPlace').value, medPoints);
+  const tApp = $('docTimeApp').value;
+  const tBoard = $('docTimeBoard').value;
+  // Как в старой системе: оба времени обязательны
+  if (!doctor || !place || !tApp || !tBoard) { msg('Укажи врача, куда везём и оба времени'); return; }
+  const rid = 'r-' + uid();
+  doctorVisits.push({
+    id: rid, type: 'doctor', date: shift.date,
+    doctor: doctor, place: place,
+    timeAppointed: tApp, timeBoarding: tBoard,
+    recordId: rid, shiftId: shift.id
+  });
+  rememberRef(medPoints, renderMedPoints, 'm-', 'medpoint', place);
+  rememberRef(docNames, renderDocNames, 'd-', 'docname', doctor);
+  saveState();
+  $('docName').value = ''; $('docPlace').value = '';
+  $('docTimeApp').value = ''; $('docTimeBoard').value = '';
+  msg(`Перевозка врача записана (всего: ${doctorVisits.length}). Уйдёт вместе со сменой.`);
 }
 
-function renderDoctorVisits() {
-  const list = $('#doctorVisitsList');
-  if (!doctorVisits.length) {
-    list.innerHTML = '<p style="color:#888">Визитов пока нет</p>';
-    return;
-  }
-  list.innerHTML = doctorVisits.map((v, i) => `
-    <div class="card" style="border-left:4px solid #1a9a5f">
-      <strong>${v.doctor} — ${v.place}</strong>
-      <div>Приём: ${v.timeAppointed}, посадка: ${v.timeBoarding}</div>
-      <button onclick="removeDoctorVisit(${i})" style="margin-top:6px;width:100%">Удалить</button>
-    </div>
-  `).join('');
-}
+async function finishShift() {
+  if (!segments.length) { msg('Добавь хотя бы один отрезок'); return; }
+  const tEnd = $('timeEnd').value;
+  if (!tEnd) { msg('Укажи время окончания смены'); return; }
+  // Заправка — по факту, перед завершением смены; может быть пустой
+  const refuel = $('refuel').value ? parseFloat($('refuel').value.replace(',', '.')) : '';
+  const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
+  const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
+  const highwayKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
+  const odoEnd = Number(shift.odoStart) + totalKm;
 
-window.removeDoctorVisit = function(i) {
-  doctorVisits.splice(i, 1);
-  onDataChange();
-  renderDoctorVisits();
-};
-
-function finishShift() {
-  const timeEnd = $('timeEnd').value;
-  const odometerEnd = parseInt($('odometerEnd').value, 10);
-
-  if (!timeEnd) { msg('Укажи время окончания'); return; }
-  if (isNaN(odometerEnd)) { msg('Укажи корректный одометр окончания (число)'); return; }
-
-  shift.timeEnd = timeEnd;
-  shift.odometerEnd = odometerEnd;
-
-  // Сохраняем «прошлую смену» для автозаполнения одометра в следующей
-  localStorage.setItem('lastShiftEnd', JSON.stringify(shift));
-
-  // Отправляем все данные на сервер
-  const records = [
-    {
-      id: shift.id,
-      type: 'shift',
-      driverFio: shift.driverFio,
-      carLabel: shift.carLabel,
-      date: shift.date,
-      timeStart: shift.timeStart,
-      timeEnd: shift.timeEnd,
-      odometerStart: shift.odometerStart,
-      odometerEnd: shift.odometerEnd
-    }
-  ];
-
-  segments.forEach(s => records.push({
-    id: s.id, type: 'segment', shiftId: shift.id, from: s.from, to: s.to,
-    km: s.km, timeFrom: s.timeFrom, timeTo: s.timeTo
-  }));
-
-  doctorVisits.forEach(v => records.push({
-    id: v.id, type: 'doctor', shiftId: shift.id, place: v.place,
-    doctor: v.doctor, timeAppointed: v.timeAppointed, timeBoarding: v.timeBoarding
-  }));
-
-  sendOrQueue(records).then(r => {
-    if (r.sent) {
-      msg('Смена завершена и отправлена на сервер.');
-    } else if (r.queued) {
-      msg('Смена сохранена в очередь и уйдёт при появлении сети.');
-    } else {
-      msg('Ошибка отправки: ' + (r.error || 'неизвестная ошибка'));
+  // Маршрут и врачи — как в старой системе
+  const visitedPoints = [];
+  const routePoints = [];
+  segments.forEach(s => {
+    visitedPoints.push(s.from, s.to);
+    if (s.from !== s.to) {           // петля X→X не добавляет точки маршрута
+      if (!routePoints.length) routePoints.push(s.from);
+      routePoints.push(s.to);
     }
   });
+  const route = compressRoute(routePoints);
+  const doctorInfo = buildDoctorText(visitedPoints);
+  const dMin = durationMin(shift.timeStart, tEnd);
 
-  // Очищаем состояние
+  const batch = [
+    { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
+      route: route, doctor: doctorInfo,
+      duration: minToHHMM(dMin), durationMin: dMin,
+      refuel: refuel, status: 'Завершено', type: 'shift' },
+    ...segments.map(s => ({ ...s, type: 'segment' })),
+    ...doctorVisits
+  ];
+
+  msg('Отправляю…');
+  const r = await sendOrQueue(batch);
+  // Перенос одометра в следующую смену — как старая clearForm.
+  // Ставим в обоих случаях: смена уже зафиксирована на телефоне.
+  localStorage.setItem('lastOdoEnd', String(odoEnd));
   clearState();
-  shift = null;
-  segments = [];
-  doctorVisits = [];
-
-  $('driverSel').disabled = false;
-  $('newShiftForm').style.display = 'block';
-  $('workCards').style.display = 'none';
-  renderShiftHeader(); // очистит заголовок
-  renderSegments();
-  renderDoctorVisits();
+  shift = null; segments = []; doctorVisits = [];
+  msg(r.sent
+    ? `Отправлено: ${r.out.processed.length} записей.\nМаршрут: ${route}` + (doctorInfo ? `\nВрачи: ${doctorInfo}` : '')
+    : (r.queued
+        ? `Нет сети: смена сохранена в телефоне и отправится автоматически.\nМаршрут: ${route}`
+        : 'Не отправилось: ' + r.error + '\nСмена сохранена в очереди.'));
+  showStart();
+  // Выбор водителя и автомобиля сохраняем — пользователь может
+  // сразу открыть следующую смену без повторного выбора
+  $('odoStart').value = odoEnd;
+  $('refuel').value = '';
+  $('timeStart').value = '';
+  $('timeEnd').value = '';
 }
+
+// ================= ВОССТАНОВЛЕНИЕ ПРИ ЗАПУСКЕ =================
+// Если приложение закрыли до завершения смены — смена вернётся как была
+function restoreState() {
+  const saved = loadState();
+  if (!saved || !saved.shift) return false;
+  shift = saved.shift;
+  segments = saved.segments || [];
+  doctorVisits = saved.doctorVisits || [];
+  showWork();
+  return true;
+}
+
+// ================= PWA =================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+loadDrivers().then(() => {
+  const restored = restoreState();
+  if (restored) {
+    msg(`Смена восстановлена: ${shift.driverId}, ${shift.carLabel}. Продолжай работу.`);
+  } else {
+    // Подставляем одометр прошлой смены (аналог переноса B4 из старой формы)
+    const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
+    if (!isNaN(saved) && saved > 0) $('odoStart').value = saved;
+    $('shiftDate').value = todayISO();
+  }
+});
