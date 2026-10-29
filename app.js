@@ -20,10 +20,17 @@ let docNames = [];         // кэш справочника ФИО врачей
 let drivers = [];          // водители с их автомобилями (сгруппированы)
 let carEditMode = null;    // 'new' | 'edit' | null
 
+// Данные для отчётов и справочника
+let shiftsData = [];       // смены с сервера (или из кэша)
+let reportDetail = null;   // ФИО выбранного водителя (детализация) или null
+let doctorsContact = [];   // контакты врачей с листа «Врачи»
+let clinics = [];          // клиники с листа «Клиники»
+
 const NEW_DRIVER = '__new';
 const QUEUE_KEY = 'sendQueue';
 const REF_KEY = 'refCache';
 const STATE_KEY = 'appState_v1';
+const SHIFTS_KEY = 'shiftsCache';
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
 // ================= СОХРАНЕНИЕ СОСТОЯНИЯ СМЕНЫ =================
@@ -121,6 +128,10 @@ function applyRefs(data) {
   if (Array.isArray(data.interPoints)) interPoints = Array.from(new Set(data.interPoints));
   if (Array.isArray(data.medPoints)) medPoints = Array.from(new Set(data.medPoints));
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
+  if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
+  if (Array.isArray(data.clinics)) clinics = data.clinics;
+  // ФИО врачей для подсказок: справочник + лист «Врачи» (без дублей)
+  docNames = Array.from(new Set(docNames.concat(doctorsContact.map(d => d.fio).filter(Boolean))));
   renderPoints(); renderMedPoints(); renderDocNames();
   // Восстанавливаем выбор водителя и машины с прошлого раза
   renderDriverSelect(localStorage.getItem('lastDriver'));
@@ -132,6 +143,10 @@ async function loadDrivers() {
     const out = await (await fetch(API_URL)).json();
     // Сохраняем снапшот для работы без сети
     localStorage.setItem(REF_KEY, JSON.stringify(out));
+    if (Array.isArray(out.shifts)) {
+      shiftsData = out.shifts;
+      localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
+    }
     applyRefs(out);
   } catch (e) {
     // Нет сети (или API недоступен) — работаем на сохранённом снапшоте
@@ -183,9 +198,10 @@ function renderPoints() {
     .sort(ruCmp)
     .map(p => `<option value="${p}">`).join('');
 }
+// Мед-точки + названия клиник (из листа «Клиники») — по алфавиту
 function renderMedPoints() {
-  $('medPointsList').innerHTML = medPoints
-    .slice()
+  const all = Array.from(new Set(medPoints.concat(clinics.map(c => c.name).filter(Boolean))));
+  $('medPointsList').innerHTML = all
     .sort(ruCmp)
     .map(p => `<option value="${p}">`).join('');
 }
@@ -390,8 +406,15 @@ function rememberRef(list, render, prefix, type, name) {
   sendOrQueue([{ id: prefix + uid(), type: type, name: name }]);
 }
 
-// ================= ПОКАЗ ЭКРАНОВ =================
+// ================= ЭКРАНЫ =================
+const SCREENS = ['menuScreen', 'workScreen', 'reportScreen', 'refsScreen'];
+function showScreen(name) {
+  SCREENS.forEach(id => { $(id).style.display = 'none'; });
+  $(name).style.display = 'block';
+}
+
 function showWork() {
+  showScreen('workScreen');
   $('startCard').style.display = 'none';
   $('shiftCard').style.display = 'block';
   $('docCard').style.display = 'block';
@@ -401,12 +424,192 @@ function showWork() {
 }
 
 function showStart() {
+  showScreen('workScreen');
   $('startCard').style.display = 'block';
   $('shiftCard').style.display = 'none';
   $('docCard').style.display = 'none';
   $('finishCard').style.display = 'none';
   $('driverSel').disabled = false;
   $('carSel').disabled = false;
+}
+
+// Пункт меню «Запись смены»: зависит от того, открыта ли смена
+function openWork() {
+  if (shift) showWork(); else showStart();
+}
+
+// ================= ОТЧЁТЫ =================
+async function openReport() {
+  showScreen('reportScreen');
+  reportDetail = null;
+  $('backBtn').style.display = 'none';
+  if (!$('reportMonth').value) $('reportMonth').value = todayISO().slice(0, 7);
+  $('reportBody').innerHTML = '<div class="card">Загружаю…</div>';
+  try {
+    const out = await (await fetch(API_URL)).json();
+    shiftsData = Array.isArray(out.shifts) ? out.shifts : [];
+    localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
+  } catch (e) {
+    // Нет сети — показываем сохранённые данные
+    try { shiftsData = JSON.parse(localStorage.getItem(SHIFTS_KEY) || '[]'); }
+    catch (e2) { shiftsData = []; }
+    msg('Нет сети: отчёт по сохранённым данным.');
+  }
+  renderReport();
+}
+
+// Сводный дашборд по всем водителям за месяц
+function renderReport() {
+  const month = $('reportMonth').value || todayISO().slice(0, 7);
+  const rows = shiftsData.filter(s => String(s.date || '').startsWith(month));
+  $('backBtn').style.display = reportDetail ? 'block' : 'none';
+
+  if (reportDetail) { renderDriverDetail(rows); return; }
+
+  const byDriver = {};
+  rows.forEach(s => {
+    const k = s.driverId || '—';
+    if (!byDriver[k]) byDriver[k] = { n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 };
+    const t = byDriver[k];
+    t.n++;
+    t.total += parseFloat(s.totalKm) || 0;
+    t.city += parseFloat(s.cityKm) || 0;
+    t.hw += parseFloat(s.highwayKm) || 0;
+    t.refuel += parseFloat(s.refuel) || 0;
+    const dMin = hhmmToMin(s.duration);
+    if (!isNaN(dMin)) t.minutes += dMin;
+  });
+  const names = Object.keys(byDriver).sort(ruCmp);
+  if (!names.length) {
+    $('reportBody').innerHTML = '<div class="card">За ' + month + ' смен нет.</div>';
+    return;
+  }
+  const sum = names.reduce((acc, k) => {
+    const t = byDriver[k];
+    acc.n += t.n; acc.total += t.total; acc.city += t.city;
+    acc.hw += t.hw; acc.refuel += t.refuel; acc.minutes += t.minutes;
+    return acc;
+  }, { n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 });
+
+  const rowsHtml = names.map(k => {
+    const t = byDriver[k];
+    return `<tr>
+      <td><a href="#" onclick="openDriverDetail('${k.replace(/'/g, "\\'")}')">${k}</a></td>
+      <td>${t.n}</td>
+      <td>${t.total.toFixed(1)}</td>
+      <td>${t.city.toFixed(1)}</td>
+      <td>${t.hw.toFixed(1)}</td>
+      <td>${t.refuel ? t.refuel.toFixed(1) : ''}</td>
+    </tr>`;
+  }).join('');
+
+  $('reportBody').innerHTML = `
+    <div class="card"><h3>Общий отчёт по всем водителям</h3>
+      <table>
+        <tr><th>Водитель</th><th>Смен</th><th>Км</th><th>Город</th><th>Трасса</th><th>Топл., л</th></tr>
+        ${rowsHtml}
+        <tr class="tot">
+          <td>Итого</td>
+          <td>${sum.n}</td>
+          <td>${sum.total.toFixed(1)}</td>
+          <td>${sum.city.toFixed(1)}</td>
+          <td>${sum.hw.toFixed(1)}</td>
+          <td>${sum.refuel ? sum.refuel.toFixed(1) : ''}</td>
+        </tr>
+      </table>
+    </div>
+    <div class="card">Время в сменах (всего): <b>${minToHHMM(sum.minutes)}</b></div>`;
+}
+
+// Детализация по водителю: все его смены за выбранный месяц
+function renderDriverDetail(rows) {
+  const rows2 = rows.filter(s => (s.driverId || '—') === reportDetail);
+  if (!rows2.length) {
+    $('reportBody').innerHTML = `<div class="card">У водителя «${reportDetail}» за месяц смен нет.</div>`;
+    return;
+  }
+  const list = rows2.map(s => `
+    <div class="card">
+      <b>${s.date}</b> — ${s.carLabel || ''}
+      <div>${s.timeStart || ''}–${s.timeEnd || ''} (${s.duration || ''}), км: ${s.totalKm || 0} (город ${s.cityKm || 0}, трасса ${s.highwayKm || 0})${s.refuel ? `, заправка ${s.refuel} л` : ''}</div>
+      <div style="font-size:13px;color:#555">Маршрут: ${s.route || '—'}</div>
+      ${s.doctor ? `<div style="font-size:13px;color:#555">Врачи: ${s.doctor}</div>` : ''}
+    </div>`).join('');
+  $('reportBody').innerHTML = `<div class="card"><h3>${reportDetail}</h3>Смен за месяц: ${rows2.length}</div>` + list;
+}
+
+function openDriverDetail(fio) {
+  reportDetail = fio;
+  renderReport();
+}
+
+function backToReport() {
+  reportDetail = null;
+  renderReport();
+}
+
+// ================= СПРАВОЧНИК =================
+function openRefs() {
+  showScreen('refsScreen');
+  $('refSearch').value = '';
+  renderRefs();
+}
+
+// Экранирование спецсимволов в выводе
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// 89127609788 → tel:+79127609788
+function telHref(tel) {
+  const digits = String(tel || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 11 && digits[0] === '8') return 'tel:+7' + digits.slice(1);
+  if (digits.length === 11 && digits[0] === '7') return 'tel:+' + digits;
+  return 'tel:' + digits;
+}
+
+// Информационное окно: контакты врачей и клиник (по кэшу, работает без сети)
+function renderRefs() {
+  const q = ($('refSearch').value || '').trim().toLowerCase();
+  const match = fields => !q || fields.some(f => String(f || '').toLowerCase().indexOf(q) !== -1);
+
+  const docs = doctorsContact
+    .filter(d => match([d.fio, d.fam, d.addr, d.tel]))
+    .sort((a, b) => ruCmp(a.fio || a.fam, b.fio || b.fam));
+  const cls = clinics
+    .filter(c => match([c.name, c.city, c.addr, c.tel, c.day]))
+    .sort((a, b) => ruCmp(a.city + a.name, b.city + b.name));
+
+  const docsHtml = docs.length ? docs.map(d => `
+    <div class="ref-item">
+      <b>${esc(d.fio || d.fam)}</b><br>
+      ${d.addr ? '📍 ' + esc(d.addr) + '<br>' : ''}
+      ${d.tel ? `<a class="tel" href="${telHref(d.tel)}">📞 ${esc(d.tel)}</a>` : ''}
+      ${d.route ? `<a class="lnk" target="_blank" rel="noopener" href="${esc(d.route)}">🧭 маршрут</a>` : ''}
+    </div>`).join('')
+    : '<div class="ref-item empty">Врач не найден.</div>';
+
+  const clsHtml = cls.length ? cls.map(c => `
+    <div class="ref-item">
+      <b>${esc(c.name)}</b>${c.city ? ' — ' + esc(c.city) : ''}<br>
+      ${c.addr ? '📍 ' + esc(c.addr) + '<br>' : ''}
+      ${c.day ? '🗓 ' + esc(c.day) + '<br>' : ''}
+      ${c.tel ? `<a class="tel" href="${telHref(c.tel)}">📞 ${esc(c.tel)}</a>` : ''}
+      ${c.route ? `<a class="lnk" target="_blank" rel="noopener" href="${esc(c.route)}">🧭 маршрут</a>` : ''}
+      ${c.extra ? `<div class="extra">${esc(c.extra)}</div>` : ''}
+    </div>`).join('')
+    : '<div class="ref-item empty">Клиника не найдена.</div>';
+
+  $('refsBody').innerHTML = `
+    <div class="card">
+      <h3>Врачи (${docs.length})</h3>${docsHtml}
+    </div>
+    <div class="card">
+      <h3>Клиники (${cls.length})</h3>${clsHtml}
+    </div>`;
 }
 
 // ================= СМЕНА =================
@@ -557,7 +760,6 @@ function restoreState() {
   shift = saved.shift;
   segments = saved.segments || [];
   doctorVisits = saved.doctorVisits || [];
-  showWork();
   // Продолжаем с того места, где остановились:
   // «Откуда» = «Куда» последнего отрезка
   if (segments.length) {
@@ -574,18 +776,18 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ================= ЗАПУСК =================
 loadDrivers().then(() => {
   const restored = restoreState();
+  showScreen('menuScreen');
   if (restored) {
-    // Итоги по уже записанным отрезкам + последний из них
     const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
     const last = segments.length ? segments[segments.length - 1] : null;
     const lastInfo = last
       ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nПродолжай с «${last.to}».`
       : '\nОтрезков пока нет.';
-    msg(`Смена восстановлена: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}`);
+    msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
   } else {
-    // Подставляем одометр прошлой смены (аналог переноса B4 из старой формы)
     const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
     if (!isNaN(saved) && saved > 0) $('odoStart').value = saved;
     $('shiftDate').value = todayISO();

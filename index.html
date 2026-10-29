@@ -15,89 +15,138 @@
 body{font-family:system-ui,sans-serif;margin:0 auto;padding:12px;max-width:480px;background:#f4f6f9}
 .card{background:#fff;border-radius:12px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 h2{font-size:16px;margin:4px 0}
+h3{font-size:14px;margin:10px 0 4px;color:#444}
 label{font-size:13px;color:#555}
 input,select{width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px;border:1px solid #ccd3dd;border-radius:8px}
 button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radius:8px;background:#2f6fed;color:#fff}
 button.small{background:#8892a0;padding:8px;font-size:14px}
+button.menu{padding:16px;font-size:17px;margin:10px 0}
 #msg{padding:8px;border-radius:8px;background:#eef3ff;margin:8px 0;font-size:14px;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+th,td{padding:7px 5px;border-bottom:1px solid #e8ecf3;text-align:left}
+th{background:#f0f3f8;font-size:12px;color:#555}
+tr.tot td{font-weight:bold;background:#f7f9fc}
+td a{color:#2f6fed;text-decoration:none;font-weight:bold}
+.ref-item{border-top:1px solid #e8ecf3;padding:8px 0;font-size:14px;line-height:1.45}
+.ref-item b{font-size:15px}
+.ref-item .lnk{color:#2f6fed;text-decoration:none;font-weight:bold;margin-right:10px}
+.ref-item .tel{color:#2f9e6e;text-decoration:none;font-weight:bold;margin-right:10px}
+.ref-item .extra{white-space:pre-wrap;color:#555;font-size:13px;margin-top:2px}
+.empty{color:#888;font-size:14px}
 </style>
 </head>
 <body>
 <div id="msg"></div>
 
-<div class="card">
-  <h2>Водитель и автомобиль</h2>
-  <label>Водитель</label>
-  <select id="driverSel" onchange="onDriverChange()"><option>— загрузка… —</option></select>
-  <label>Автомобиль</label>
-  <select id="carSel" onchange="onCarChange()"></select>
-  <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
-  <button class="small" onclick="openDriverEdit()">✎ Править ФИО водителя</button>
-  <div id="carPanel" style="display:none">
-    <label>Марка/модель</label>
-    <input id="carNameInput">
-    <label>Госномер</label>
-    <input id="carPlateInput">
-    <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
+<!-- ГЛАВНЫЙ ЭКРАН -->
+<div id="menuScreen" class="card">
+  <h2>Курьер — смены</h2>
+  <button class="menu" style="background:#2f6fed" onclick="openWork()">📋 Запись смены</button>
+  <button class="menu" style="background:#5a4fcf" onclick="openReport()">📊 Отчёты</button>
+  <button class="menu" style="background:#2f9e6e" onclick="openRefs()">📖 Справочник: врачи и клиники</button>
+</div>
+
+<!-- ЗАПИСЬ СМЕНЫ -->
+<div id="workScreen" style="display:none">
+  <div class="card">
+    <h2>Водитель и автомобиль</h2>
+    <label>Водитель</label>
+    <select id="driverSel" onchange="onDriverChange()"><option>— загрузка… —</option></select>
+    <label>Автомобиль</label>
+    <select id="carSel" onchange="onCarChange()"></select>
+    <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
+    <button class="small" onclick="openDriverEdit()">✎ Править ФИО водителя</button>
+    <div id="carPanel" style="display:none">
+      <label>Марка/модель</label>
+      <input id="carNameInput">
+      <label>Госномер</label>
+      <input id="carPlateInput">
+      <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
+    </div>
+    <div id="driverEditPanel" style="display:none">
+      <label>Новое ФИО водителя</label>
+      <input id="editDriverFio">
+      <button style="background:#2f9e6e" onclick="saveDriverEdit()">Сохранить ФИО</button>
+    </div>
+    <div id="driverPanel" style="display:none">
+      <label>ФИО нового водителя</label>
+      <input id="newDriverFio">
+      <label>Автомобиль (марка/модель)</label>
+      <input id="newDriverCar">
+      <label>Госномер</label>
+      <input id="newDriverPlate">
+      <button style="background:#2f9e6e" onclick="saveDriver()">Сохранить водителя</button>
+    </div>
   </div>
-  <div id="driverEditPanel" style="display:none">
-    <label>Новое ФИО водителя</label>
-    <input id="editDriverFio">
-    <button style="background:#2f9e6e" onclick="saveDriverEdit()">Сохранить ФИО</button>
+
+  <div class="card" id="startCard">
+    <h2>Открыть смену</h2>
+    <label>Дата смены</label>
+    <input id="shiftDate" type="date">
+    <label>Время начала смены</label>
+    <input id="timeStart" type="time">
+    <label>Одометр на начало</label>
+    <input id="odoStart" type="number" inputmode="decimal">
+    <button onclick="startShift()">Начать смену</button>
   </div>
-  <div id="driverPanel" style="display:none">
-    <label>ФИО нового водителя</label>
-    <input id="newDriverFio">
-    <label>Автомобиль (марка/модель)</label>
-    <input id="newDriverCar">
-    <label>Госномер</label>
-    <input id="newDriverPlate">
-    <button style="background:#2f9e6e" onclick="saveDriver()">Сохранить водителя</button>
+
+  <div class="card" id="shiftCard" style="display:none">
+    <h2>Отрезок</h2>
+    <label>Тип отрезка</label>
+    <select id="segType">
+      <option value="city">Городской</option>
+      <option value="inter">Междугородний</option>
+    </select>
+    <label>Откуда</label><input id="segFrom" list="pointsList" value="ОФИС">
+    <label>Куда</label><input id="segTo" list="pointsList">
+    <datalist id="pointsList"></datalist>
+    <label>Одометр в точке «Куда» (с начала смены)</label><input id="segKm" type="number" inputmode="decimal">
+    <button onclick="addSegment()">Добавить отрезок</button>
   </div>
+
+  <div class="card" id="docCard" style="display:none">
+    <h2>Перевозка врача</h2>
+    <label>Врач (ФИО)</label><input id="docName" list="docNamesList">
+    <datalist id="docNamesList"></datalist>
+    <label>Куда везём (мед-точка)</label><input id="docPlace" list="medPointsList">
+    <datalist id="medPointsList"></datalist>
+    <label>Назначенное время посадки</label><input id="docTimeApp" type="time">
+    <label>Фактическое время посадки</label><input id="docTimeBoard" type="time">
+    <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить врача</button>
+  </div>
+
+  <div class="card" id="finishCard" style="display:none">
+    <label>Заправка, л (если была)</label>
+    <input id="refuel" type="number" inputmode="decimal">
+    <label>Время окончания смены</label>
+    <input id="timeEnd" type="time">
+    <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>
+  </div>
+
+  <button class="small" onclick="showScreen('menuScreen')">← На главный экран</button>
 </div>
 
-<div class="card" id="startCard">
-  <h2>Открыть смену</h2>
-  <label>Дата смены</label>
-  <input id="shiftDate" type="date">
-  <label>Время начала смены</label>
-  <input id="timeStart" type="time">
-  <label>Одометр на начало</label>
-  <input id="odoStart" type="number" inputmode="decimal">
-  <button onclick="startShift()">Начать смену</button>
+<!-- ОТЧЁТЫ -->
+<div id="reportScreen" style="display:none">
+  <div class="card">
+    <h2>📊 Отчёты</h2>
+    <label>Месяц</label>
+    <input id="reportMonth" type="month" onchange="renderReport()">
+    <button class="small" onclick="backToReport()" id="backBtn" style="display:none">← К общему отчёту</button>
+  </div>
+  <div id="reportBody"></div>
+  <button class="small" onclick="showScreen('menuScreen')">← На главный экран</button>
 </div>
 
-<div class="card" id="shiftCard" style="display:none">
-  <h2>Отрезок</h2>
-  <label>Тип отрезка</label>
-  <select id="segType">
-    <option value="city">Городской</option>
-    <option value="inter">Междугородний</option>
-  </select>
-  <label>Откуда</label><input id="segFrom" list="pointsList" value="ОФИС">
-  <label>Куда</label><input id="segTo" list="pointsList">
-  <datalist id="pointsList"></datalist>
-  <label>Одометр в точке «Куда» (с начала смены)</label><input id="segKm" type="number" inputmode="decimal">
-  <button onclick="addSegment()">Добавить отрезок</button>
-</div>
-
-<div class="card" id="docCard" style="display:none">
-  <h2>Перевозка врача</h2>
-  <label>Врач (ФИО)</label><input id="docName" list="docNamesList">
-  <datalist id="docNamesList"></datalist>
-  <label>Куда везём (мед-точка)</label><input id="docPlace" list="medPointsList">
-  <datalist id="medPointsList"></datalist>
-  <label>Назначенное время посадки</label><input id="docTimeApp" type="time">
-  <label>Фактическое время посадки</label><input id="docTimeBoard" type="time">
-  <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить врача</button>
-</div>
-
-<div class="card" id="finishCard" style="display:none">
-  <label>Заправка, л (если была)</label>
-  <input id="refuel" type="number" inputmode="decimal">
-  <label>Время окончания смены</label>
-  <input id="timeEnd" type="time">
-  <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>
+<!-- СПРАВОЧНИК -->
+<div id="refsScreen" style="display:none">
+  <div class="card">
+    <h2>📖 Справочник: врачи и клиники</h2>
+    <label>Поиск (ФИО, город, название, адрес)</label>
+    <input id="refSearch" placeholder="Например: Батуева или Агрыз" oninput="renderRefs()">
+  </div>
+  <div id="refsBody"></div>
+  <button class="small" onclick="showScreen('menuScreen')">← На главный экран</button>
 </div>
 
 <script src="app.js"></script>
