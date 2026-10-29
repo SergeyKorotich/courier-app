@@ -15,6 +15,7 @@ let segments = [];
 let doctorVisits = [];
 let points = ['ОФИС'];
 let interPoints = [];
+let medPoints = []; // «Куда везём врача» — лист MedPoints
 let docNames = [];
 let drivers = [];
 let carEditMode = null;
@@ -263,6 +264,7 @@ function applyRefs(data) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
   }
   if (Array.isArray(data.interPoints)) interPoints = Array.from(new Set(data.interPoints));
+  if (Array.isArray(data.medPoints)) medPoints = Array.from(new Set(data.medPoints));
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
@@ -338,10 +340,10 @@ function renderSegPoints() {
   const src = $('segType').value === 'inter' ? interPoints : points;
   $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
-// Подсказки «Куда везём» — только междугородние точки (InterPoints)
+// Подсказки «Куда везём» — только MedPoints
 function renderDocPlaceList() {
   if (!$('docPlaceList')) return;
-  $('docPlaceList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
+  $('docPlaceList').innerHTML = medPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 function renderDocNames() {
   if (!$('docNamesList')) return;
@@ -501,7 +503,7 @@ function rememberRef(list, refType, name) {
   list.push(name);
   renderSegPoints();
   renderDocPlaceList();
-  sendOrQueue([{ id: (refType === 'interpoint' ? 'i-' : 'p-') + uid(), type: refType, name: name }]);
+  sendOrQueue([{ id: (refType === 'interpoint' ? 'i-' : refType === 'medpoint' ? 'm-' : 'p-') + uid(), type: refType, name: name }]);
 }
 
 // ================= ЭКРАНЫ =================
@@ -524,6 +526,7 @@ function showWork() {
   $('finishCard').style.display = 'block';
   $('carSel').disabled = true;
   renderSegPoints();
+  renderDocPlaceList();
 }
 
 function showStart() {
@@ -899,9 +902,9 @@ function addSegment() {
 }
 
 function addDoctorVisit() {
-  // Врач — только DoctorsRef (docNames), пункт — только InterPoints
+  // Врач — только DoctorsRef (docNames), пункт — только MedPoints
   const doctor = canonName($('docName').value, docNames);
-  const place = canonName($('docPlace').value, interPoints);
+  const place = canonName($('docPlace').value, medPoints);
   const tApp = $('docTimeApp').value;
   const tBoard = $('docTimeBoard').value;
   if (!doctor || !place || !tApp || !tBoard) { msg('Укажи врача, куда везём и оба времени'); return; }
@@ -912,8 +915,8 @@ function addDoctorVisit() {
     timeAppointed: tApp, timeBoarding: tBoard,
     recordId: rid, shiftId: shift.id
   });
-  // Новые пункты уходят в InterPoints, новые врачи — в DoctorsRef
-  rememberRef(interPoints, 'interpoint', place);
+  // Новые пункты уходят в MedPoints, новые врачи — в DoctorsRef
+  rememberRef(medPoints, 'medpoint', place);
   rememberRef(docNames, 'docname', doctor);
   saveState();
   $('docName').value = ''; $('docPlace').value = '';
@@ -1022,6 +1025,7 @@ async function init() {
   const restored = restoreState();
   if (restored && me) {
     renderSegPoints();
+    renderDocPlaceList();
     const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
     const last = segments.length ? segments[segments.length - 1] : null;
     const lastInfo = last
