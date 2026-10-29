@@ -477,9 +477,11 @@ function areEquivalentPoints(p1, p2) {
 
 // Общий маршрут смены: соседние ОФИС/Ижевск схлопываются,
 // крайние Ижевск (начало и конец) превращаются в ОФИС —
-// смена всегда стартует и финиширует в ОФИС
+// смена всегда стартует и финиширует в ОФИС.
+// Сравнение регистронезависимое: точки хранятся как «Ижевск», а не «ИЖЕВСК»
 function compressRoute(pointsList) {
   if (!pointsList || !pointsList.length) return '';
+  const up = s => String(s || '').trim().toUpperCase();
   const result = [pointsList[0]];
   for (let i = 1; i < pointsList.length; i++) {
     const last = result[result.length - 1];
@@ -489,8 +491,8 @@ function compressRoute(pointsList) {
     result.push(cur);
   }
   if (result.length) {
-    if (result[0] === 'ИЖЕВСК') result[0] = 'ОФИС'; // страховка для старых смен
-    if (result.length > 1 && result[result.length - 1] === 'ИЖЕВСК') result[result.length - 1] = 'ОФИС';
+    if (up(result[0]) === 'ИЖЕВСК') result[0] = 'ОФИС'; // страховка для старых смен
+    if (result.length > 1 && up(result[result.length - 1]) === 'ИЖЕВСК') result[result.length - 1] = 'ОФИС';
   }
   return result.join(', ');
 }
