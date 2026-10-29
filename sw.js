@@ -1,13 +1,16 @@
 // Кэшируем только статику этого сайта (GET same-origin).
 // POST к API всегда идёт в сеть — кэш туда не лезет.
-const CACHE = 'kuryer-v3';
+const CACHE = 'kuryer-v5';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
   './manifest.json',
-  './576.jpeg'
+  './icon-192.png',
+  './icon-512.png'
 ];
+// Эти файлы меняются при каждом релизе — отдаём из сети, кэш как запасной вариант
+const VOLATILE = [/\/index\.html$/, /\/app\.js$/, /\/$/];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -30,11 +33,21 @@ self.addEventListener('fetch', e => {
   let url;
   try { url = new URL(e.request.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return; // API — мимо кэша
+
+  const path = url.pathname;
+  const volatile = VOLATILE.some(re => re.test(path));
+
   e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy));
-      return res;
-    }).catch(() => caches.match('./index.html')))
+    (volatile
+      ? // network-first: свежая версия важнее мгновенной загрузки
+        fetch(e.request).then(res => {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+          return res;
+        }).catch(() => caches.match(e.request)
+            .then(hit => hit || caches.match('./index.html')))
+      : // cache-first: иконка, manifest и прочая неизменяемая статика
+        caches.match(e.request).then(hit => hit || fetch(e.request))
+    )
   );
 });

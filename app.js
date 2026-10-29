@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbw79XBmJF5UBjHPr5KathKLgc1Q7FOT6V4CA2zU1BaOCkCN-quRO3snYWLOWVzatY2S/exec'; // ← свой URL!
+const API_URL = 'https://script.google.com/macros/s/AKfycbzq-ZwU9rCSy3mYpfjJfjs6YNnfqgY7STKJgNJgFzmuG4UFQvoDHKqD7sSLHBwysYKX/exec'; // TODO: сменить после переразвёртывания веб-приложения
 
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
@@ -32,6 +32,7 @@ const REF_KEY = 'refCache';
 const STATE_KEY = 'appState_v1';
 const SHIFTS_KEY = 'shiftsCache';
 const AUTH_KEY = 'authCreds';
+const MAX_TRIES = 3; // попыток на пакет до пропуска
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
 // Продолжительность смены в минутах: сначала колонка «в минутах», затем чч:мм
@@ -72,7 +73,7 @@ function showAuthTab(which) {
 
 function renderLoginHints() {
   $('loginFioList').innerHTML = drivers
-    .map(d => `<option value="${d.fio}">`).join('');
+    .map(d => `<option value="${esc(d.fio)}">`).join('');
 }
 
 async function doLogin() {
@@ -99,6 +100,17 @@ async function doLogin() {
       msg('Нет сети, и это ФИО не найдено в кэше. Подключись и войди.');
     }
   }
+}
+
+// Тихая перепроверка сохранённого PIN при появлении сети.
+// Не разлогиниваем (чтобы не убить открытую смену), только предупреждаем.
+async function verifyAuthOnline() {
+  const auth = getAuth();
+  if (!auth || !auth.pin || !me) return;
+  try {
+    const out = await serverAuth('login', { fio: auth.fio, pin: auth.pin });
+    if (out && !out.ok) msg('Внимание: сервер не принял сохранённый PIN. Проверьте вход вручную.');
+  } catch (e) { /* нет сети — проверим при следующем онлайне */ }
 }
 
 async function doRegister() {
@@ -169,6 +181,11 @@ function loadQueue() {
   catch (e) { return []; }
 }
 function saveQueue(q) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
+function enqueue(records) {
+  const q = loadQueue();
+  q.push({ ts: new Date().toISOString(), tries: 0, records: records });
+  saveQueue(q);
+}
 
 async function postRecords(records) {
   const res = await fetch(API_URL, {
@@ -182,34 +199,54 @@ async function postRecords(records) {
   return { ok: false, error: out ? (out.error || 'ошибка сервера') : 'некорректный ответ' };
 }
 
+// Любой неуспех (сеть или отказ сервера) — пакет в очередь, данные не теряются
 async function sendOrQueue(records) {
   try {
     const r = await postRecords(records);
     if (r.ok) return { sent: true, out: r.out };
-    return { sent: false, error: r.error };
+    enqueue(records);
+    return { sent: false, error: r.error, queued: true };
   } catch (e) {
-    const q = loadQueue();
-    q.push({ ts: new Date().toISOString(), records: records });
-    saveQueue(q);
+    enqueue(records);
     return { sent: false, queued: true };
   }
 }
 
+let flushing = false; // защита от параллельного запуска (online + интервал + loadDrivers)
 async function flushQueue() {
-  const q = loadQueue();
-  if (!q.length) return;
-  let sent = 0;
-  while (q.length) {
-    try {
-      const r = await postRecords(q[0].records);
-      if (r.ok) { q.shift(); saveQueue(q); sent++; }
-      else break;
-    } catch (e) { break; }
-  }
-  if (sent) {
-    const left = loadQueue().length;
-    msg(left ? `Очередь отправлена: ${sent} пакет(ов). В очереди осталось: ${left}`
-             : `Очередь отправлена: ${sent} пакет(ов). Всё синхронизировано.`);
+  if (flushing) return;
+  flushing = true;
+  try {
+    const q = loadQueue();
+    if (!q.length) return;
+    let sent = 0;
+    while (q.length) {
+      const item = q[0];
+      try {
+        const r = await postRecords(item.records);
+        if (r.ok) { q.shift(); saveQueue(q); sent++; continue; }
+        // Сервер отказал: ретраим до MAX_TRIES раз, потом пропускаем пакет,
+        // чтобы один «ядовитый» пакет не заблокировал всю очередь навсегда
+        item.tries = (item.tries || 0) + 1;
+        if (item.tries >= MAX_TRIES) {
+          msg('Сервер отклонил пакет после ' + MAX_TRIES + ' попыток (' + (r.error || 'ошибка') + '). Пакет пропущен — сообщите старшему.');
+          q.shift();
+        }
+        saveQueue(q);
+        break;
+      } catch (e) {
+        // сеть недоступна — пакет остаётся, попробуем позже
+        saveQueue(q);
+        break;
+      }
+    }
+    if (sent) {
+      const left = loadQueue().length;
+      msg(left ? `Очередь отправлена: ${sent} пакет(ов). В очереди осталось: ${left}`
+               : `Очередь отправлена: ${sent} пакет(ов). Всё синхронизировано.`);
+    }
+  } finally {
+    flushing = false;
   }
 }
 window.addEventListener('online', flushQueue);
@@ -250,6 +287,7 @@ async function loadDrivers() {
       localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
     }
     applyRefs(out);
+    verifyAuthOnline();
   } catch (e) {
     let cached = null;
     try { cached = JSON.parse(localStorage.getItem(REF_KEY) || 'null'); } catch (err) {}
@@ -267,7 +305,7 @@ function renderCars() {
   if (!me) return;
   const cars = (me.cars || []).slice().sort((a, b) => ruCmp(carLabel(a), carLabel(b)));
   $('carSel').innerHTML = cars.length
-    ? cars.map(c => `<option value="${carLabel(c)}">${carLabel(c)}</option>`).join('')
+    ? cars.map(c => `<option value="${esc(carLabel(c))}">${esc(carLabel(c))}</option>`).join('')
     : '<option value="">— нет автомобилей —</option>';
   $('carSel').innerHTML += '<option value="__new">➕ Добавить автомобиль…</option>';
   $('carPanel').style.display = 'none';
@@ -295,16 +333,16 @@ function selectCarByLabel(label) {
 
 // Городские точки — из Points (с ОФИСом всегда в списке)
 function renderPoints() {
-  $('pointsList').innerHTML = points.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+  $('pointsList').innerHTML = points.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 // Междугородние точки — из InterPoints
 function renderInterPoints() {
-  $('interPointsList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+  $('interPointsList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 // Датасписок «Откуда/Куда» переключается по типу маршрута
 function renderSegPoints() {
   const src = $('segType').value === 'inter' ? interPoints : points;
-  $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+  $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 function onSegTypeChange() {
   renderSegPoints();
@@ -312,10 +350,10 @@ function onSegTypeChange() {
 }
 function renderMedPoints() {
   const all = Array.from(new Set(medPoints.concat(clinics.map(c => c.name).filter(Boolean))));
-  $('medPointsList').innerHTML = all.sort(ruCmp).map(p => `<option value="${p}">`).join('');
+  $('medPointsList').innerHTML = all.sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 function renderDocNames() {
-  $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+  $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 
 function onCarChange() {
@@ -351,11 +389,16 @@ async function saveCar() {
   const label = car + ' ' + plate;
   msg('Сохраняю автомобиль…');
   let r;
-  if (carEditMode === 'edit') {
-    const c = me.cars.find(x => carLabel(x) === $('carSel').value) || me.cars[0];
+  const c = carEditMode === 'edit'
+    ? (me.cars.find(x => carLabel(x) === $('carSel').value) || me.cars[0])
+    : null;
+  if (carEditMode === 'edit' && c && c.row) {
+    // Правка известна серверу по номеру строки
     r = await sendOrQueue([{ id: 'care-' + uid(), type: 'driveredit', row: c.row, fio: me.fio, car: car, plate: plate }]);
     c.name = car; c.plate = plate;
   } else {
+    // Автомобиль добавлен офлайн (row отсутствует) — отправляем как новый,
+    // иначе сервер отклонит «driveredit» без строки и правка потеряется
     r = await sendOrQueue([{ id: 'car-' + uid(), type: 'driver', fio: me.fio, car: car, plate: plate }]);
     me.cars.push({ name: car, plate: plate, row: null });
   }
@@ -507,13 +550,16 @@ function renderDashboard() {
     refuel += parseFloat(s.refuel) || 0;
     minutes += shiftMinutes(s);
   });
+  // Видимый счётчик неотправленного — главный ответ на жалобу «я ввёл, а оно пропало»
+  const queued = loadQueue().length;
   $('dashCard').style.display = 'block';
   $('dashTitle').textContent = `📊 ${me.fio} — ${month}`;
   $('dashBody').innerHTML = `
     <div class="dash-row"><span>Смен</span><span>${rows.length}</span></div>
     <div class="dash-row"><span>Пробег, км</span><span>${total.toFixed(1)}</span></div>
     <div class="dash-row"><span>Заправка, л</span><span>${refuel ? refuel.toFixed(1) : '—'}</span></div>
-    <div class="dash-row"><span>Продолжительность смен</span><span>${minToHHMM(minutes)}</span></div>`;
+    <div class="dash-row"><span>Продолжительность смен</span><span>${minToHHMM(minutes)}</span></div>` +
+    (queued ? `<div class="dash-row"><span>⚠ Не отправлено записей</span><span>${queued}</span></div>` : '');
   $('supBtn').style.display = isSupervisor(me) ? 'block' : 'none';
 }
 
@@ -535,6 +581,13 @@ async function openReport() {
     msg('Нет сети: отчёт по сохранённым данным.');
   }
   renderReport();
+}
+
+// Имя безопасно и для HTML-метки, и для JS-строки в onclick
+function escJsName(s) {
+  return esc(String(s || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'"));
 }
 
 function renderReport() {
@@ -565,7 +618,7 @@ function renderReport() {
     const t = byDriver[k];
     const avg = t.n ? Math.round(t.minutes / t.n) : 0;
     return `<tr>
-      <td><a href="#" onclick="openDriverDetail('${t.name.replace(/'/g, "\\'")}')">${t.name}</a></td>
+      <td><a href="#" onclick="openDriverDetail('${escJsName(t.name)}')">${esc(t.name)}</a></td>
       <td>${t.n}</td>
       <td>${t.total.toFixed(1)}</td>
       <td>${t.refuel ? t.refuel.toFixed(1) : ''}</td>
@@ -586,17 +639,17 @@ function renderDriverDetail(rows) {
   const rows2 = rows.filter(s => normFio(s.driverId) === normFio(reportDetail) ||
     (!s.driverId && normFio(reportDetail) === normFio('— (без водителя)')));
   if (!rows2.length) {
-    $('reportBody').innerHTML = `<div class="card">У водителя «${reportDetail}» за месяц смен нет.</div>`;
+    $('reportBody').innerHTML = `<div class="card">У водителя «${esc(reportDetail)}» за месяц смен нет.</div>`;
     return;
   }
   const list = rows2.map(s => `
     <div class="card">
-      <b>${s.date}</b> — ${s.carLabel || ''}
+      <b>${esc(s.date)}</b> — ${esc(s.carLabel || '')}
       <div>${s.timeStart || ''}–${s.timeEnd || ''} (${s.duration || minToHHMM(shiftMinutes(s))}), км: ${s.totalKm || 0}${s.refuel ? `, заправка ${s.refuel} л` : ''}</div>
-      <div style="font-size:13px;color:#555">Маршрут: ${s.route || '—'}</div>
-      ${s.doctor ? `<div style="font-size:13px;color:#555">Врачи: ${s.doctor}</div>` : ''}
+      <div style="font-size:13px;color:#555">Маршрут: ${esc(s.route || '—')}</div>
+      ${s.doctor ? `<div style="font-size:13px;color:#555">Врачи: ${esc(s.doctor)}</div>` : ''}
     </div>`).join('');
-  $('reportBody').innerHTML = `<div class="card"><h3>${reportDetail}</h3>Смен за месяц: ${rows2.length}</div>` + list;
+  $('reportBody').innerHTML = `<div class="card"><h3>${esc(reportDetail)}</h3>Смен за месяц: ${rows2.length}</div>` + list;
 }
 
 function openDriverDetail(fio) {
@@ -911,7 +964,9 @@ async function finishShift() {
   msg(r.sent
     ? `Отправлено: ${r.out.processed.length} записей.\nМаршрут: ${route}` + (doctorInfo ? `\nВрачи: ${doctorInfo}` : '')
     : (r.queued
-        ? `Нет сети: смена сохранена в телефоне и отправится автоматически.\nМаршрут: ${route}`
+        ? (r.error
+            ? `Не отправилось: ${r.error}\nСмена сохранена в очереди и уйдёт автоматически.`
+            : `Нет сети: смена сохранена в телефоне и отправится автоматически.\nМаршрут: ${route}`)
         : 'Не отправилось: ' + r.error + '\nСмена сохранена в очереди.'));
   showStart();
   $('odoStart').value = odoEnd;
