@@ -476,7 +476,8 @@ function areEquivalentPoints(p1, p2) {
 }
 
 // Общий маршрут смены: соседние ОФИС/Ижевск схлопываются,
-// последний Ижевск превращается в ОФИС
+// крайние Ижевск (начало и конец) превращаются в ОФИС —
+// смена всегда стартует и финиширует в ОФИС
 function compressRoute(pointsList) {
   if (!pointsList || !pointsList.length) return '';
   const result = [pointsList[0]];
@@ -487,7 +488,10 @@ function compressRoute(pointsList) {
     if (areEquivalentPoints(last, cur)) continue;
     result.push(cur);
   }
-  if (result.length && result[result.length - 1] === 'ИЖЕВСК') result[result.length - 1] = 'ОФИС';
+  if (result.length) {
+    if (result[0] === 'ИЖЕВСК') result[0] = 'ОФИС'; // страховка для старых смен
+    if (result.length > 1 && result[result.length - 1] === 'ИЖЕВСК') result[result.length - 1] = 'ОФИС';
+  }
   return result.join(', ');
 }
 
@@ -924,9 +928,8 @@ function addSegment() {
   rememberRef(refList, refType, to);
   saveState();
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
-  const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
-  const hwKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
-  msg(`Отрезок: ${segmentKm} км (${routeType}).\nВсего: ${segments.length} отрезк., город ${cityKm} км, трасса ${hwKm} км.`);
+  const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
+  msg(`Отрезок: ${from} → ${to}, ${segmentKm} км (${routeType}).\nОбщий пробег: ${totalKm} км.`);
 }
 
 function addDoctorVisit() {
@@ -966,10 +969,10 @@ async function finishShift() {
   const routePoints = [];
   segments.forEach(s => {
     visitedPoints.push(s.from, s.to);
-    if (s.from !== s.to) {
-      if (!routePoints.length) routePoints.push(s.from);
-      routePoints.push(s.to);
-    }
+    // Точка старта маршрута — всегда «Откуда» первого отрезка смены,
+    // даже если отрезок записан без перемещения (ОФИС → ОФИС)
+    if (!routePoints.length) routePoints.push(s.from);
+    if (s.to !== s.from) routePoints.push(s.to);
   });
   const route = compressRoute(routePoints);
   const doctorInfo = buildDoctorText(visitedPoints);
@@ -1043,7 +1046,7 @@ function showRestoredShiftInfo() {
   const lastInfo = last
     ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nОдометр в «${last.to}»: ${last.kmAtB} км.\nПродолжай с «${last.to}».`
     : '\nОтрезков пока нет.';
-  msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
+  msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, общий пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
 }
 
 // ================= PWA =================
