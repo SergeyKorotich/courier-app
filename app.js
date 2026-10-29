@@ -267,7 +267,9 @@ function applyRefs(data) {
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
   // Подсказки врача — только из DoctorsRef (лист «Врачи» не подмешивается)
-  renderPoints(); renderInterPoints(); renderDocPlaceList(); renderDocNames();
+  renderSegPoints();
+  renderDocPlaceList();
+  renderDocNames();
   renderLoginHints();
   if (me) {
     const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
@@ -329,29 +331,26 @@ function selectCarByLabel(label) {
   updateCarButtons();
 }
 
-// Городские точки — из Points (с ОФИСом всегда в списке)
-function renderPoints() {
-  $('pointsList').innerHTML = points.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
-}
-// Междугородние точки — из InterPoints
-function renderInterPoints() {
-  $('interPointsList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
-}
-// Подсказки «Куда везём» — только междугородние точки (InterPoints)
-function renderDocPlaceList() {
-  $('docPlaceList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
-}
-// Датасписок «Откуда/Куда» переключается по типу маршрута
+// Подсказки «Откуда/Куда» переключаются по типу маршрута:
+// городской — Points, междугородний — InterPoints
 function renderSegPoints() {
+  if (!$('segType') || !$('segPointsList')) return;
   const src = $('segType').value === 'inter' ? interPoints : points;
   $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
+// Подсказки «Куда везём» — только междугородние точки (InterPoints)
+function renderDocPlaceList() {
+  if (!$('docPlaceList')) return;
+  $('docPlaceList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
+}
+function renderDocNames() {
+  if (!$('docNamesList')) return;
+  $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
+}
+
 function onSegTypeChange() {
   renderSegPoints();
   saveState();
-}
-function renderDocNames() {
-  $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 
 function onCarChange() {
@@ -495,11 +494,14 @@ function durationMin(tStart, tEnd) {
   return d;
 }
 
-function rememberRef(list, render, prefix, type, name) {
+// Добавление нового пункта в справочник: локально + запись на сервер.
+// refRender может быть null-safe функцией — она вызывается только при новом имени.
+function rememberRef(list, refType, name) {
   if (!name || list.includes(name)) return;
   list.push(name);
-  render();
-  sendOrQueue([{ id: prefix + uid(), type: type, name: name }]);
+  renderSegPoints();
+  renderDocPlaceList();
+  sendOrQueue([{ id: (refType === 'interpoint' ? 'i-' : 'p-') + uid(), type: refType, name: name }]);
 }
 
 // ================= ЭКРАНЫ =================
@@ -685,7 +687,7 @@ function telHref(tel) {
   return 'tel:' + digits;
 }
 
-// --- Врачи: поиск, карточки с правкой ---
+// --- Врачи: поиск, карточки с правкой (ФИО — единственный ключ) ---
 function renderRefsDoc() {
   const q = ($('refSearchDoc').value || '').trim().toLowerCase();
   if (!q) { $('docsCard').style.display = 'none'; return; }
@@ -751,7 +753,7 @@ async function saveDocForm() {
     doctorsContact.push({ key: fio.toLowerCase(), fio: fio,
       addr: data.addr, tel: data.tel, route: data.route });
   }
-  rememberRef(docNames, renderDocNames, 'd-', 'docname', fio);
+  rememberRef(docNames, 'docname', fio);
   closeDocForm();
   renderRefsDoc();
   const r = await sendOrQueue([rec]);
@@ -830,7 +832,6 @@ async function saveClinicForm() {
   } else {
     clinics.push({ key: (city + '|' + name).toLowerCase(), ...data });
   }
-  rememberRef(interPoints, renderInterPoints, 'i-', 'interpoint', name);
   closeClinicForm();
   renderRefsCls();
   const r = await sendOrQueue([rec]);
@@ -873,7 +874,6 @@ function addSegment() {
   // Городской — список Points, междугородний — InterPoints
   const refList = segType === 'inter' ? interPoints : points;
   const refType = segType === 'inter' ? 'interpoint' : 'point';
-  const refRender = segType === 'inter' ? renderInterPoints : renderPoints;
   const from = canonName($('segFrom').value, refList);
   const to = canonName($('segTo').value, refList);
   const km = parseFloat(String($('segKm').value).replace(',', '.'));
@@ -889,8 +889,8 @@ function addSegment() {
     : ((from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса');
   segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, segType, ts: new Date().toISOString() });
   // Новые точки уходят в свой справочник: городской — Points, междугородний — InterPoints
-  rememberRef(refList, refRender, segType === 'inter' ? 'i-' : 'p-', refType, from);
-  rememberRef(refList, refRender, segType === 'inter' ? 'i-' : 'p-', refType, to);
+  rememberRef(refList, refType, from);
+  rememberRef(refList, refType, to);
   saveState();
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
   const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
@@ -913,8 +913,8 @@ function addDoctorVisit() {
     recordId: rid, shiftId: shift.id
   });
   // Новые пункты уходят в InterPoints, новые врачи — в DoctorsRef
-  rememberRef(interPoints, renderInterPoints, 'i-', 'interpoint', place);
-  rememberRef(docNames, renderDocNames, 'd-', 'docname', doctor);
+  rememberRef(interPoints, 'interpoint', place);
+  rememberRef(docNames, 'docname', doctor);
   saveState();
   $('docName').value = ''; $('docPlace').value = '';
   $('docTimeApp').value = ''; $('docTimeBoard').value = '';
