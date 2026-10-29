@@ -11,7 +11,8 @@ const minToHHMM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + Strin
 let shift = null;          // текущая открытая смена
 let segments = [];         // отрезки этой смены
 let doctorVisits = [];     // перевозки врачей этой смены
-let points = ['ОФИС'];     // кэш справочника точек
+let points = ['ОФИС'];     // кэш городских точек
+let interPoints = [];      // кэш междугородних точек
 let medPoints = [];        // кэш мед-точек
 let docNames = [];         // кэш справочника ФИО врачей
 let drivers = [];          // водители с их автомобилями (сгруппированы)
@@ -113,6 +114,7 @@ function applyRefs(data) {
   if (Array.isArray(data.points) && data.points.length) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
   }
+  if (Array.isArray(data.interPoints)) interPoints = Array.from(new Set(data.interPoints));
   if (Array.isArray(data.medPoints)) medPoints = Array.from(new Set(data.medPoints));
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
   renderPoints(); renderMedPoints(); renderDocNames();
@@ -169,8 +171,10 @@ function selectCarByLabel(label) {
   if (opt) $('carSel').value = label;
 }
 
+// Подсказки точек: городские + междугородние, уникальные, по алфавиту
 function renderPoints() {
-  $('pointsList').innerHTML = points.slice().sort().map(p => `<option value="${p}">`).join('');
+  const all = Array.from(new Set(points.concat(interPoints)));
+  $('pointsList').innerHTML = all.slice().sort().map(p => `<option value="${p}">`).join('');
 }
 function renderMedPoints() {
   $('medPointsList').innerHTML = medPoints.slice().sort().map(p => `<option value="${p}">`).join('');
@@ -260,19 +264,20 @@ async function saveCar() {
 }
 
 // Канонизация с учётом справочника: совпадение без учёта регистра
-// возвращается в написании справочника, новое имя — «Можга», ОФИС — капсом
+// возвращается в написании справочника, новое имя — «Можга».
+// ОФИС и Ижевск — равнозначные точки, обе пишутся как ОФИС.
 function canonName(s, list) {
   s = (s || '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
   const lower = s.toLowerCase();
-  if (lower === 'офис') return 'ОФИС';
+  if (lower === 'офис' || lower === 'ижевск') return 'ОФИС';
   const found = (list || []).find(p => p.toLowerCase() === lower);
   if (found) return found;
   return lower.split(' ')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-// ОФИС и Ижевск — эквивалентные точки (как в старой системе)
+// Подстраховка: на случай, если «Ижевск» пришёл из справочника как есть
 function areEquivalentPoints(p1, p2) {
   const a = String(p1 || '').trim().toUpperCase();
   const b = String(p2 || '').trim().toUpperCase();
@@ -280,7 +285,7 @@ function areEquivalentPoints(p1, p2) {
 }
 
 // Сжатие маршрута: подряд идущие одинаковые точки схлопываются,
-// ОФИС/Ижевск считаются одним пунктом, Ижевск в конце становится ОФИС
+// ОФИС/Ижевск считаются одним пунктом
 function compressRoute(pointsList) {
   if (!pointsList || !pointsList.length) return '';
   const result = [pointsList[0]];
@@ -384,24 +389,39 @@ function startShift() {
   localStorage.setItem('lastCar', carLabelVal);
   saveState();
   showWork();
+  $('segFrom').value = 'ОФИС';
+  $('segTo').value = ''; $('segKm').value = '';
   msg(`Смена открыта: ${d.fio}, ${carLabelVal}.`);
 }
 
 function addSegment() {
-  const from = canonName($('segFrom').value, points);
-  const to = canonName($('segTo').value, points);
+  const segType = $('segType').value; // 'city' | 'inter'
+  const allPts = points.concat(interPoints);
+  const from = canonName($('segFrom').value, allPts);
+  const to = canonName($('segTo').value, allPts);
   const km = parseFloat(String($('segKm').value).replace(',', '.'));
   if (!from || !to || isNaN(km) || km < 0) { msg('Заполни «Откуда», «Куда» и пробег'); return; }
-  // Как в старой системе: вводится пробег с начала смены, первый отрезок — от нуля
+  // Вводится показание одометра с начала смены: должно быть строго
+  // больше предыдущего, иначе это ошибка ввода (километраж вместо одометра)
   const prevKm = segments.length ? segments[segments.length - 1].kmAtB : 0;
-  const segmentKm = Math.max(0, km - prevKm);
-  const routeType = (from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса';
-  segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, ts: new Date().toISOString() });
+  if (km <= prevKm) {
+    msg(`Ошибка: показание одометра (${km}) должно быть больше предыдущего: ${prevKm} км.\nЕсли нужно записать километраж отрезка — считай показание сам: ${prevKm} + километраж.`);
+    return;
+  }
+  const segmentKm = km - prevKm;
+  // Городской отрезок — весь в «Город».
+  // Междугородний делится как раньше: касание ОФИС/Ижевск — «Город», иначе «Трасса».
+  const routeType = segType === 'city'
+    ? 'Город'
+    : ((from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса');
+  segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, segType, ts: new Date().toISOString() });
   rememberRef(points, renderPoints, 'p-', 'point', from);
   rememberRef(points, renderPoints, 'p-', 'point', to);
   saveState();
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
-  msg(`Отрезок: ${segmentKm} км (${routeType}). Всего отрезков: ${segments.length}`);
+  const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
+  const hwKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
+  msg(`Отрезок: ${segmentKm} км (${routeType}).\nВсего: ${segments.length} отрезк., город ${cityKm} км, трасса ${hwKm} км.`);
 }
 
 function addDoctorVisit() {
@@ -437,7 +457,8 @@ async function finishShift() {
   const highwayKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
   const odoEnd = Number(shift.odoStart) + totalKm;
 
-  // Маршрут и врачи — как в старой системе
+  // Маршрут: точки отрезков, петли X→X не добавляют точку;
+  // Ижевск уже нормализован в ОФИС, так что «в хвосте» его не будет
   const visitedPoints = [];
   const routePoints = [];
   segments.forEach(s => {

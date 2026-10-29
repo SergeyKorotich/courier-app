@@ -26,8 +26,19 @@ button.small{background:#8892a0;padding:8px;font-size:14px}
 <div id="msg"></div>
 
 <div class="card">
-  <h2>Водитель</h2>
+  <h2>Водитель и автомобиль</h2>
+  <label>Водитель</label>
   <select id="driverSel" onchange="onDriverChange()"><option>— загрузка… —</option></select>
+  <label>Автомобиль</label>
+  <select id="carSel" onchange="onCarChange()"></select>
+  <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
+  <div id="carPanel" style="display:none">
+    <label>Марка/модель</label>
+    <input id="carNameInput">
+    <label>Госномер</label>
+    <input id="carPlateInput">
+    <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
+  </div>
   <div id="driverPanel" style="display:none">
     <label>ФИО нового водителя</label>
     <input id="newDriverFio">
@@ -41,16 +52,6 @@ button.small{background:#8892a0;padding:8px;font-size:14px}
 
 <div class="card" id="startCard">
   <h2>Открыть смену</h2>
-  <label>Автомобиль</label>
-  <select id="carSel" onchange="onCarChange()"></select>
-  <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
-  <div id="carPanel" style="display:none">
-    <label>Марка/модель</label>
-    <input id="carNameInput">
-    <label>Госномер</label>
-    <input id="carPlateInput">
-    <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
-  </div>
   <label>Дата смены</label>
   <input id="shiftDate" type="date">
   <label>Время начала смены</label>
@@ -62,10 +63,15 @@ button.small{background:#8892a0;padding:8px;font-size:14px}
 
 <div class="card" id="shiftCard" style="display:none">
   <h2>Отрезок</h2>
+  <label>Тип отрезка</label>
+  <select id="segType">
+    <option value="city">Городской</option>
+    <option value="inter">Междугородний</option>
+  </select>
   <label>Откуда</label><input id="segFrom" list="pointsList" value="ОФИС">
   <label>Куда</label><input id="segTo" list="pointsList">
   <datalist id="pointsList"></datalist>
-  <label>Одометр в точке «Куда»</label><input id="segKm" type="number" inputmode="decimal">
+  <label>Одометр в точке «Куда» (с начала смены)</label><input id="segKm" type="number" inputmode="decimal">
   <button onclick="addSegment()">Добавить отрезок</button>
 </div>
 
