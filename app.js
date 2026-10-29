@@ -86,7 +86,8 @@ async function doLogin() {
     if (out.ok) {
       setAuth(out.fio, pin);
       enterApp(out.fio, out.role || '');
-      msg('Вход выполнен: ' + out.fio);
+      // Инфо о восстановленной смене показал enterApp — не затираем её
+      if (!shift) msg('Вход выполнен: ' + out.fio);
     } else {
       msg(out.error || 'Неверный ФИО или PIN');
     }
@@ -95,7 +96,7 @@ async function doLogin() {
     if (d) {
       setAuth(d.fio, pin);
       enterApp(d.fio, d.role || '');
-      msg('Нет сети: вход по сохранённым данным. При появлении сети проверим PIN.');
+      if (!shift) msg('Нет сети: вход по сохранённым данным. При появлении сети проверим PIN.');
     } else {
       msg('Нет сети, и это ФИО не найдено в кэше. Подключись и войди.');
     }
@@ -130,7 +131,7 @@ async function doRegister() {
         drivers.sort((a, b) => ruCmp(a.fio, b.fio));
       }
       enterApp(out.fio, '');
-      msg('Регистрация готова: ' + out.fio + (car || plate ? '\nАвто появится в таблице при синхронизации' : ''));
+      if (!shift) msg('Регистрация готова: ' + out.fio + (car || plate ? '\nАвто появится в таблице при синхронизации' : ''));
     } else {
       msg(out.error || 'Не удалось зарегистрироваться');
     }
@@ -149,6 +150,8 @@ function enterApp(fio, role) {
   renderCars();
   showScreen('menuScreen');
   renderDashboard();
+  // При любом способе входа показываем состояние незавершённой смены
+  if (shift) showRestoredShiftInfo();
 }
 
 function doLogout() {
@@ -979,6 +982,7 @@ async function finishShift() {
 
   msg('Отправляю…');
   const r = await sendOrQueue(batch);
+  // Конечный одометр становится стартовым для следующей смены
   localStorage.setItem('lastOdoEnd', String(odoEnd));
   clearState();
   shift = null; segments = []; doctorVisits = [];
@@ -1022,6 +1026,22 @@ function restoreState() {
   return true;
 }
 
+// Информационное окно по восстановленной смене:
+// авто, число отрезков, последний отрезок и одометр в точке «куда»
+function showRestoredShiftInfo() {
+  if (!me) return;
+  if (shift.driverId && normFio(shift.driverId) !== normFio(me.fio)) {
+    msg('В телефоне есть незавершённая смена другого водителя (' + shift.driverId + ').\nСообщите старшему: её нужно перенести или закрыть.');
+    return;
+  }
+  const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
+  const last = segments.length ? segments[segments.length - 1] : null;
+  const lastInfo = last
+    ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nОдометр в «${last.to}»: ${last.kmAtB} км.\nПродолжай с «${last.to}».`
+    : '\nОтрезков пока нет.';
+  msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
+}
+
 // ================= PWA =================
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -1031,6 +1051,9 @@ if ('serviceWorker' in navigator) {
 
 // ================= ЗАПУСК =================
 async function init() {
+  // Смена восстанавливается сразу, без ожидания сети:
+  // офлайн-запуск не должен её терять
+  const restored = restoreState();
   await loadDrivers();
   const auth = getAuth();
   if (auth && auth.fio) {
@@ -1043,18 +1066,7 @@ async function init() {
   } else {
     showScreen('loginScreen');
   }
-  const restored = restoreState();
-  if (restored && me) {
-    renderSegPoints();
-    renderDocPlaceList();
-    selectCarByLabel(shift.carLabel);
-    const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
-    const last = segments.length ? segments[segments.length - 1] : null;
-    const lastInfo = last
-      ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nОдометр в «${last.to}»: ${last.kmAtB} км.\nПродолжай с «${last.to}».`
-      : '\nОтрезков пока нет.';
-    msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
-  }
+  // Инфо о смене показал enterApp; здесь — только подготовка к новой смене
   if (!restored) {
     const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
     if (!isNaN(saved) && saved > 0) $('odoStart').value = saved;
