@@ -1,6 +1,6 @@
 // Кэшируем только статику этого сайта (GET same-origin).
 // POST к API всегда идёт в сеть — кэш туда не лезет.
-const CACHE = 'kuryer-v8';
+const CACHE = 'kuryer-v9';
 const ASSETS = [
   './',
   './index.html',
