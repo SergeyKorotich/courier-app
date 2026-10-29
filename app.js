@@ -306,6 +306,10 @@ async function loadDrivers() {
 function renderCars() {
   if (!me) return;
   const cars = (me.cars || []).slice().sort((a, b) => ruCmp(carLabel(a), carLabel(b)));
+  // Авто из открытой смены обязано быть в списке, даже если справочник ещё не доехал
+  if (shift && shift.carLabel && !cars.find(c => carLabel(c) === shift.carLabel)) {
+    cars.unshift({ name: shift.carLabel, plate: '', row: null });
+  }
   $('carSel').innerHTML = cars.length
     ? cars.map(c => `<option value="${esc(carLabel(c))}">${esc(carLabel(c))}</option>`).join('')
     : '<option value="">— нет автомобилей —</option>';
@@ -314,6 +318,9 @@ function renderCars() {
   updateCarButtons();
   $('meName').textContent = me.fio;
   $('editDriverBtn').style.display = 'block';
+  // Восстанавливаем выбор: авто открытой смены, иначе последнее использованное
+  if (shift && shift.carLabel) selectCarByLabel(shift.carLabel);
+  else selectCarByLabel(localStorage.getItem('lastCar'));
 }
 
 function currentCarLabel() {
@@ -387,6 +394,12 @@ async function saveCar() {
   if (!car || !plate) { msg('Укажи марку и госномер'); return; }
   const label = car + ' ' + plate;
   msg('Сохраняю автомобиль…');
+  // В смене с отрезками сменить авто нельзя: одометр начала привязан к конкретной машине
+  if (shift && segments.length > 0) {
+    msg('В смене уже есть отрезки — сменить автомобиль нельзя.\nЗавершите смену и откройте новую с нужным авто.');
+    $('carPanel').style.display = 'none';
+    return;
+  }
   let r;
   const c = carEditMode === 'edit'
     ? (me.cars.find(x => carLabel(x) === $('carSel').value) || me.cars[0])
@@ -400,6 +413,12 @@ async function saveCar() {
     // иначе сервер отклонит «driveredit» без строки и правка потеряется
     r = await sendOrQueue([{ id: 'car-' + uid(), type: 'driver', fio: me.fio, car: car, plate: plate }]);
     me.cars.push({ name: car, plate: plate, row: null });
+  }
+  // Если смена открыта без отрезков — привязываем её к новому авто
+  if (shift) {
+    shift.carLabel = label;
+    shift.carId = shift.driverId + '|' + label;
+    saveState();
   }
   localStorage.setItem('lastCar', label);
   renderCars();
@@ -524,7 +543,9 @@ function showWork() {
   $('shiftCard').style.display = 'block';
   $('docCard').style.display = 'block';
   $('finishCard').style.display = 'block';
-  $('carSel').disabled = true;
+  // Смена авто разрешена, пока не записано ни одного отрезка:
+  // после первого одометр начала смены привязан к конкретному авто
+  $('carSel').disabled = !!(shift && segments.length > 0);
   renderSegPoints();
   renderDocPlaceList();
 }
@@ -1026,10 +1047,11 @@ async function init() {
   if (restored && me) {
     renderSegPoints();
     renderDocPlaceList();
+    selectCarByLabel(shift.carLabel);
     const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
     const last = segments.length ? segments[segments.length - 1] : null;
     const lastInfo = last
-      ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nПродолжай с «${last.to}».`
+      ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nОдометр в «${last.to}»: ${last.kmAtB} км.\nПродолжай с «${last.to}».`
       : '\nОтрезков пока нет.';
     msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
   }
