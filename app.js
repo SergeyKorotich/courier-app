@@ -804,7 +804,7 @@ async function finishShift() {
 
   // Дашборд сразу учитывает только что завершённую смену
   shiftsData.push({
-    date: shift ? '' : (shiftDateSafe()), driverId: batch[0].driverId,
+    date: batch[0].date, driverId: batch[0].driverId,
     carLabel: batch[0].carLabel, timeStart: batch[0].timeStart, timeEnd: tEnd,
     totalKm: String(totalKm), cityKm: String(cityKm), highwayKm: String(highwayKm),
     refuel: refuel === '' ? '' : String(refuel),
@@ -813,12 +813,6 @@ async function finishShift() {
   localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
   renderDashboard();
 }
-
-// Дата только что завершённой смены
-function shiftDateSafe() {
-  return batchDate || todayISO();
-}
-let batchDate = null;
 
 // ================= ВОССТАНОВЛЕНИЕ ПРИ ЗАПУСКЕ =================
 // Если приложение закрыли до завершения смены — смена вернётся как была
