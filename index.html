@@ -6,11 +6,11 @@
 <title>Курьер — смены</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2f6fed">
-<link rel="icon" href="icon-192.png">
+<link rel="icon" href="576.JPEG">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Курьер">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="576.JPEG">
 <style>
 body{font-family:system-ui,sans-serif;margin:0 auto;padding:12px;max-width:480px;background:#f4f6f9}
 .card{background:#fff;border-radius:12px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
@@ -29,41 +29,82 @@ tr.tot td{font-weight:bold;background:#f7f9fc}
 td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 .dash-row{display:flex;justify-content:space-between;font-size:15px;padding:4px 0;border-bottom:1px solid #eef1f6}
 .dash-row span:last-child{font-weight:bold}
+.logo{display:block;margin:6px auto 2px;width:96px;height:96px;object-fit:contain}
+.logo-sm{display:block;margin:0 auto;width:48px;height:48px;object-fit:contain}
 .ref-item{border-top:1px solid #e8ecf3;padding:8px 0;font-size:14px;line-height:1.45}
 .ref-item b{font-size:15px}
 .ref-item .lnk{color:#2f6fed;text-decoration:none;font-weight:bold;margin-right:10px}
 .ref-item .tel{color:#2f9e6e;text-decoration:none;font-weight:bold;margin-right:10px}
 .ref-item .extra{white-space:pre-wrap;color:#555;font-size:13px;margin-top:2px}
 .empty{color:#888;font-size:14px}
+.authTabs{display:flex;gap:8px}
+.authTabs button{background:#e6ebf3;color:#333}
+.authTabs button.active{background:#2f6fed;color:#fff}
 </style>
 </head>
 <body>
 <div id="msg"></div>
 
+<!-- ВХОД / РЕГИСТРАЦИЯ -->
+<div id="loginScreen" style="display:none">
+  <div class="card">
+    <img class="logo" src="576.JPEG" alt="Логотип">
+    <h2 style="text-align:center">Курьер — смены</h2>
+    <div class="authTabs">
+      <button id="tabLogin" class="active" onclick="showAuthTab('login')">Вход</button>
+      <button id="tabReg" onclick="showAuthTab('reg')">Регистрация</button>
+    </div>
+
+    <div id="loginPanel">
+      <label>ФИО водителя</label>
+      <input id="loginFio" list="loginFioList" placeholder="Начните вводить фамилию">
+      <datalist id="loginFioList"></datalist>
+      <label>PIN-код</label>
+      <input id="loginPin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN">
+      <button onclick="doLogin()">Войти</button>
+    </div>
+
+    <div id="regPanel" style="display:none">
+      <label>ФИО водителя</label>
+      <input id="regFio" placeholder="Фамилия Имя Отчество">
+      <label>PIN-код (4–8 цифр, придётся запомнить)</label>
+      <input id="regPin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN">
+      <label>Автомобиль (не обязательно)</label>
+      <input id="regCar" placeholder="Марка/модель">
+      <label>Госномер (не обязательно)</label>
+      <input id="regPlate" placeholder="А123БВ116">
+      <button onclick="doRegister()">Зарегистрироваться</button>
+    </div>
+  </div>
+</div>
+
 <!-- ГЛАВНЫЙ ЭКРАН -->
-<div id="menuScreen">
-  <div class="card" id="dashCard" style="display:none">
+<div id="menuScreen" style="display:none">
+  <div class="card">
+    <img class="logo-sm" src="576.JPEG" alt="Логотип">
+  </div>
+  <div class="card" id="dashCard">
     <h2 id="dashTitle">Дашборд</h2>
     <div id="dashBody"></div>
     <button class="small" style="background:#5a4fcf;display:none" id="supBtn" onclick="openReport()">📊 Статистика всех водителей</button>
   </div>
   <div class="card">
     <button class="menu" style="background:#2f6fed" onclick="openWork()">📋 Запись смены</button>
-    <button class="menu" style="background:#5a4fcf" onclick="openReport()">📊 Отчёты</button>
     <button class="menu" style="background:#2f9e6e" onclick="openRefs()">📖 Справочник: врачи и клиники</button>
+    <button class="small" onclick="doLogout()">Выйти</button>
   </div>
 </div>
 
 <!-- ЗАПИСЬ СМЕНЫ -->
 <div id="workScreen" style="display:none">
   <div class="card">
-    <h2>Водитель и автомобиль</h2>
+    <h2>Автомобиль</h2>
     <label>Водитель</label>
-    <select id="driverSel" onchange="onDriverChange()"><option>— загрузка… —</option></select>
+    <div id="meName" style="font-size:15px;font-weight:bold">—</div>
     <label>Автомобиль</label>
     <select id="carSel" onchange="onCarChange()"></select>
-    <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
-    <button class="small" onclick="openDriverEdit()">✎ Править ФИО водителя</button>
+    <button class="small" id="editCarBtn" style="display:none" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
+    <button class="small" id="editDriverBtn" onclick="openDriverEdit()">✎ Править моё ФИО</button>
     <div id="carPanel" style="display:none">
       <label>Марка/модель</label>
       <input id="carNameInput">
@@ -72,18 +113,9 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
       <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
     </div>
     <div id="driverEditPanel" style="display:none">
-      <label>Новое ФИО водителя</label>
+      <label>Моё новое ФИО</label>
       <input id="editDriverFio">
       <button style="background:#2f9e6e" onclick="saveDriverEdit()">Сохранить ФИО</button>
-    </div>
-    <div id="driverPanel" style="display:none">
-      <label>ФИО нового водителя</label>
-      <input id="newDriverFio">
-      <label>Автомобиль (марка/модель)</label>
-      <input id="newDriverCar">
-      <label>Госномер</label>
-      <input id="newDriverPlate">
-      <button style="background:#2f9e6e" onclick="saveDriver()">Сохранить водителя</button>
     </div>
   </div>
 
@@ -134,10 +166,10 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
   <button class="small" onclick="goMenu()">← На главный экран</button>
 </div>
 
-<!-- ОТЧЁТЫ -->
+<!-- СТАТИСТИКА (только старший) -->
 <div id="reportScreen" style="display:none">
   <div class="card">
-    <h2>📊 Отчёты</h2>
+    <h2>📊 Статистика всех водителей</h2>
     <label>Месяц</label>
     <input id="reportMonth" type="month" onchange="renderReport()">
     <button class="small" onclick="backToReport()" id="backBtn" style="display:none">← К общему отчёту</button>
@@ -150,16 +182,16 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 <div id="refsScreen" style="display:none">
   <div class="card">
     <h2>📖 Справочник</h2>
-    <label>Поиск врача (ФИО, адрес, телефон)</label>
-    <input id="refSearchDoc" placeholder="Например: Батуева" oninput="renderRefsDoc()">
-    <label>Поиск клиники (город, название, адрес)</label>
-    <input id="refSearchCls" placeholder="Например: Агрыз" oninput="renderRefsCls()">
+    <label>Поиск врача по фамилии</label>
+    <input id="refSearchDoc" placeholder="Введите фамилию врача" oninput="renderRefsDoc()">
+    <label>Поиск клиники по городу</label>
+    <input id="refSearchCls" placeholder="Введите город" oninput="renderRefsCls()">
   </div>
-  <div class="card">
+  <div class="card" id="docsCard" style="display:none">
     <h3>Врачи</h3>
     <div id="refsDocs"></div>
   </div>
-  <div class="card">
+  <div class="card" id="clsCard" style="display:none">
     <h3>Клиники</h3>
     <div id="refsCls"></div>
   </div>
