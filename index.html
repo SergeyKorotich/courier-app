@@ -32,12 +32,18 @@ button.small{background:#8892a0;padding:8px;font-size:14px}
   <label>Автомобиль</label>
   <select id="carSel" onchange="onCarChange()"></select>
   <button class="small" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
+  <button class="small" onclick="openDriverEdit()">✎ Править ФИО водителя</button>
   <div id="carPanel" style="display:none">
     <label>Марка/модель</label>
     <input id="carNameInput">
     <label>Госномер</label>
     <input id="carPlateInput">
     <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
+  </div>
+  <div id="driverEditPanel" style="display:none">
+    <label>Новое ФИО водителя</label>
+    <input id="editDriverFio">
+    <button style="background:#2f9e6e" onclick="saveDriverEdit()">Сохранить ФИО</button>
   </div>
   <div id="driverPanel" style="display:none">
     <label>ФИО нового водителя</label>

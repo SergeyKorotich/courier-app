@@ -544,3 +544,31 @@ loadDrivers().then(() => {
     $('shiftDate').value = todayISO();
   }
 });
+
+// ================= ПРАВКА ФИО ВОДИТЕЛЯ =================
+function openDriverEdit() {
+  const d = currentDriver();
+  if (!d) { msg('Сначала выбери водителя'); return; }
+  $('editDriverFio').value = d.fio;
+  $('driverEditPanel').style.display = 'block';
+  $('carPanel').style.display = 'none';
+}
+
+// Правка ФИО: переименовываются все строки водителя на листе Drivers
+async function saveDriverEdit() {
+  const d = currentDriver();
+  if (!d) { msg('Сначала выбери водителя'); return; }
+  const fio = $('editDriverFio').value.trim().replace(/\s+/g, ' ');
+  if (!fio) { msg('Укажи новое ФИО'); return; }
+  if (fio.toLowerCase() === d.fio.toLowerCase()) { msg('ФИО не изменилось'); return; }
+  msg('Сохраняю ФИО…');
+  const r = await sendOrQueue([{ id: 'drvr-' + uid(), type: 'driverrename', fioOld: d.fio, fio: fio }]);
+  // Обновляем локальный список сразу: ФИО и его машины
+  d.fio = fio;
+  localStorage.setItem('lastDriver', fio);
+  $('driverEditPanel').style.display = 'none';
+  renderDriverSelect(fio);
+  selectCarByLabel(localStorage.getItem('lastCar'));
+  msg(r.sent ? 'ФИО обновлено: ' + fio
+             : 'Нет сети: правка записана в очередь и применится при синхронизации');
+}
