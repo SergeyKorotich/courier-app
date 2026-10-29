@@ -560,13 +560,14 @@ function renderReport() {
       <td>${t.city.toFixed(1)}</td>
       <td>${t.hw.toFixed(1)}</td>
       <td>${t.refuel ? t.refuel.toFixed(1) : ''}</td>
+      <td>${minToHHMM(t.minutes)}</td>
     </tr>`;
   }).join('');
 
   $('reportBody').innerHTML = `
     <div class="card"><h3>Общий отчёт по всем водителям</h3>
       <table>
-        <tr><th>Водитель</th><th>Смен</th><th>Км</th><th>Город</th><th>Трасса</th><th>Топл., л</th></tr>
+        <tr><th>Водитель</th><th>Смен</th><th>Км</th><th>Город</th><th>Трасса</th><th>Топл., л</th><th>Время</th></tr>
         ${rowsHtml}
         <tr class="tot">
           <td>Итого</td>
@@ -575,10 +576,10 @@ function renderReport() {
           <td>${sum.city.toFixed(1)}</td>
           <td>${sum.hw.toFixed(1)}</td>
           <td>${sum.refuel ? sum.refuel.toFixed(1) : ''}</td>
+          <td>${minToHHMM(sum.minutes)}</td>
         </tr>
       </table>
-    </div>
-    <div class="card">Время в сменах (всего): <b>${minToHHMM(sum.minutes)}</b></div>`;
+    </div>`;
 }
 
 function renderDriverDetail(rows) {

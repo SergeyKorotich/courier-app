@@ -1,18 +1,20 @@
 // Кэшируем только статику этого сайта (GET same-origin).
 // POST к API всегда идёт в сеть — кэш туда не лезет.
-const CACHE = 'kuryer-v1';
+const CACHE = 'kuryer-v2';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
   './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './576.jpeg'
 ];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  // Каждый файл кэшируем отдельно: один битый URL не срывает весь install
+  e.waitUntil(caches.open(CACHE).then(c =>
+    Promise.all(ASSETS.map(a => c.add(a).catch(() => {})))
+  ));
 });
 
 self.addEventListener('activate', e => {
