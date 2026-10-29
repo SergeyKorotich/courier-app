@@ -928,8 +928,8 @@ function addSegment() {
   rememberRef(refList, refType, to);
   saveState();
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
-  const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
-  msg(`Отрезок: ${from} → ${to}, ${segmentKm} км (${routeType}).\nОбщий пробег: ${totalKm} км.`);
+  // «Всего» = показание одометра, которое только что ввёл водитель (km)
+  msg(`Отрезок: ${from} → ${to}, ${segmentKm} км (${routeType}).\nВсего: ${segments.length} отрезк., всего ${km} км.`);
 }
 
 function addDoctorVisit() {
@@ -1034,15 +1034,16 @@ function restoreState() {
 }
 
 // Информационное окно по восстановленной смене:
-// авто, число отрезков, последний отрезок и одометр в точке «куда»
+// авто, число отрезков, последний отрезок и общий пробег
+// (берём из показания одометра последнего отрезка — kmAtB)
 function showRestoredShiftInfo() {
   if (!me) return;
   if (shift.driverId && normFio(shift.driverId) !== normFio(me.fio)) {
     msg('В телефоне есть незавершённая смена другого водителя (' + shift.driverId + ').\nСообщите старшему: её нужно перенести или закрыть.');
     return;
   }
-  const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
   const last = segments.length ? segments[segments.length - 1] : null;
+  const totalKm = last ? last.kmAtB : 0;
   const lastInfo = last
     ? `\nПоследний отрезок: ${last.from} → ${last.to} (${last.segmentKm} км).\nОдометр в «${last.to}»: ${last.kmAtB} км.\nПродолжай с «${last.to}».`
     : '\nОтрезков пока нет.';
