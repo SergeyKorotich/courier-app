@@ -9,7 +9,7 @@ const minToHHMM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + Strin
 const ruCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'ru');
 const normFio = s => String(s || '').trim().toLowerCase();
 
-let me = null;             // авторизованный водитель {fio, role, cars}
+let me = null;
 let shift = null;
 let segments = [];
 let doctorVisits = [];
@@ -17,12 +17,15 @@ let points = ['ОФИС'];
 let interPoints = [];
 let medPoints = [];
 let docNames = [];
-let drivers = [];          // кэш списка водителей (для офлайн-входа)
+let drivers = [];
 let carEditMode = null;
 let shiftsData = [];
 let reportDetail = null;
 let doctorsContact = [];
 let clinics = [];
+// Формы справочника: null = добавление, ключ = правка
+let docEditKey = null;
+let clinicEditKey = null;
 
 const QUEUE_KEY = 'sendQueue';
 const REF_KEY = 'refCache';
@@ -41,7 +44,6 @@ function setAuth(fio, pin) {
 }
 function clearAuth() { localStorage.removeItem(AUTH_KEY); }
 
-// Вызов входа/регистрации: POST без очереди, ответ нужен сразу
 async function serverAuth(action, payload) {
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -80,7 +82,6 @@ async function doLogin() {
       msg(out.error || 'Неверный ФИО или PIN');
     }
   } catch (e) {
-    // Нет сети: пускаем по совпадению ФИО из кэша (PIN проверить нечем)
     const d = drivers.find(x => normFio(x.fio) === normFio(fio));
     if (d) {
       setAuth(d.fio, pin);
@@ -104,12 +105,11 @@ async function doRegister() {
     const out = await serverAuth('register', { fio: fio, pin: pin, car: car, plate: plate });
     if (out.ok) {
       setAuth(out.fio, pin);
-      // Локально: добавить себя в список, чтобы сразу выбрать авто
       if (!drivers.find(x => normFio(x.fio) === normFio(out.fio))) {
         drivers.push({ fio: out.fio, cars: car || plate ? [{ name: car, plate: plate, row: null }] : [], role: '' });
+        drivers.sort((a, b) => ruCmp(a.fio, b.fio));
       }
       enterApp(out.fio, '');
-      msg(out.role ? '' : 'Регистрация готова. Роль «старший» ставится на листе Drivers в колонке «Роль».');
       msg('Регистрация готова: ' + out.fio + (car || plate ? '\nАвто появится в таблице при синхронизации' : ''));
     } else {
       msg(out.error || 'Не удалось зарегистрироваться');
@@ -119,7 +119,6 @@ async function doRegister() {
   }
 }
 
-// Вход в приложение под конкретным водителем
 function enterApp(fio, role) {
   const found = drivers.find(x => normFio(x.fio) === normFio(fio));
   me = {
@@ -226,7 +225,6 @@ function applyRefs(data) {
   docNames = Array.from(new Set(docNames.concat(doctorsContact.map(d => d.fio).filter(Boolean))));
   renderPoints(); renderMedPoints(); renderDocNames();
   renderLoginHints();
-  // Если авторизован — обновляем его машины из свежих данных
   if (me) {
     const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
     if (found) { me.cars = found.cars || []; me.role = found.role || me.role; }
@@ -248,7 +246,7 @@ async function loadDrivers() {
     try { cached = JSON.parse(localStorage.getItem(REF_KEY) || 'null'); } catch (err) {}
     if (cached) {
       applyRefs(cached);
-      if (!me) msg('Нет сети: работаем на сохранённых справочниках.\nСмены сохранятся в очереди и уйдут автоматически.');
+      if (!me) msg('Нет сети: работаем на сохранённых справочниках.\nСмены и правки сохранятся в очереди и уйдут автоматически.');
     } else if (!me) {
       msg('Нет сети и нет сохранённых данных. Подключись и открой снова.');
     }
@@ -286,25 +284,16 @@ function selectCarByLabel(label) {
   updateCarButtons();
 }
 
-// Подсказки точек: городские + междугородние, по алфавиту
 function renderPoints() {
   const all = Array.from(new Set(points.concat(interPoints)));
-  $('pointsList').innerHTML = all
-    .sort(ruCmp)
-    .map(p => `<option value="${p}">`).join('');
+  $('pointsList').innerHTML = all.sort(ruCmp).map(p => `<option value="${p}">`).join('');
 }
-// Мед-точки + названия клиник — по алфавиту
 function renderMedPoints() {
   const all = Array.from(new Set(medPoints.concat(clinics.map(c => c.name).filter(Boolean))));
-  $('medPointsList').innerHTML = all
-    .sort(ruCmp)
-    .map(p => `<option value="${p}">`).join('');
+  $('medPointsList').innerHTML = all.sort(ruCmp).map(p => `<option value="${p}">`).join('');
 }
 function renderDocNames() {
-  $('docNamesList').innerHTML = docNames
-    .slice()
-    .sort(ruCmp)
-    .map(p => `<option value="${p}">`).join('');
+  $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
 }
 
 function onCarChange() {
@@ -356,7 +345,6 @@ async function saveCar() {
              : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
 }
 
-// ================= ПРАВКА МОЕГО ФИО =================
 function openDriverEdit() {
   if (!me) { msg('Сначала войди'); return; }
   $('editDriverFio').value = me.fio;
@@ -372,8 +360,6 @@ async function saveDriverEdit() {
   msg('Сохраняю ФИО…');
   const r = await sendOrQueue([{ id: 'drvr-' + uid(), type: 'driverrename', fioOld: me.fio, fio: fio }]);
   me.fio = fio;
-  drivers.forEach(d => { if (normFio(d.fio) === normFio(me.fio) && false) d.fio = fio; });
-  // обновляем кэш входа, чтобы следующий автологин остался за тобой
   const auth = getAuth();
   if (auth) setAuth(fio, auth.pin);
   $('driverEditPanel').style.display = 'none';
@@ -383,7 +369,7 @@ async function saveDriverEdit() {
              : 'Нет сети: правка записана в очередь и применится при синхронизации');
 }
 
-// ================= СПРАВОЧНИКИ И ПОДСЧЁТЫ =================
+// ================= ПОДСЧЁТЫ =================
 function canonName(s, list) {
   s = (s || '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
@@ -487,7 +473,7 @@ function openWork() {
   if (shift) showWork(); else showStart();
 }
 
-// ================= ДАШБОРД НА ГЛАВНОМ ЭКРАНЕ =================
+// ================= ДАШБОРД =================
 function renderDashboard() {
   if (!me) return;
   const month = todayISO().slice(0, 7);
@@ -515,7 +501,7 @@ function renderDashboard() {
 
 // ================= СТАТИСТИКА (СТАРШИЙ) =================
 async function openReport() {
-  if (!me || !isSupervisor(me)) return; // только старший
+  if (!me || !isSupervisor(me)) return;
   showScreen('reportScreen');
   reportDetail = null;
   $('backBtn').style.display = 'none';
@@ -627,9 +613,10 @@ function openRefs() {
   showScreen('refsScreen');
   $('refSearchDoc').value = '';
   $('refSearchCls').value = '';
-  // Списки скрыты до запроса — на экране только поля поиска
   $('docsCard').style.display = 'none';
   $('clsCard').style.display = 'none';
+  closeDocForm();
+  closeClinicForm();
 }
 
 function esc(s) {
@@ -646,13 +633,10 @@ function telHref(tel) {
   return 'tel:' + digits;
 }
 
-// Врачи: поиск по фамилии; пусто в поле — пусто на экране
+// --- Врачи: поиск, карточки с правкой ---
 function renderRefsDoc() {
   const q = ($('refSearchDoc').value || '').trim().toLowerCase();
-  if (!q) {
-    $('docsCard').style.display = 'none';
-    return;
-  }
+  if (!q) { $('docsCard').style.display = 'none'; return; }
   const docs = doctorsContact
     .filter(d => String(d.fam || '').toLowerCase().indexOf(q) !== -1 ||
                  String(d.fio || '').toLowerCase().indexOf(q) !== -1)
@@ -660,7 +644,8 @@ function renderRefsDoc() {
   $('docsCard').style.display = 'block';
   $('refsDocs').innerHTML = docs.length ? docs.map(d => `
     <div class="ref-item">
-      <b>${esc(d.fio || d.fam)}</b><br>
+      <b>${esc(d.fio || d.fam)}</b>
+      <a class="edit" href="#" onclick="openDocForm('edit','${esc(d.key)}');return false">✎</a><br>
       ${d.addr ? '📍 ' + esc(d.addr) + '<br>' : ''}
       ${d.tel ? `<a class="tel" href="${telHref(d.tel)}">📞 ${esc(d.tel)}</a>` : ''}
       ${d.route ? `<a class="lnk" target="_blank" rel="noopener" href="${esc(d.route)}">🧭 маршрут</a>` : ''}
@@ -668,20 +653,75 @@ function renderRefsDoc() {
     : '<div class="ref-item empty">Врач не найден.</div>';
 }
 
-// Клиники: поиск по городу; пусто в поле — пусто на экране
+// --- Форма врача: добавление и правка ---
+function openDocForm(mode, key) {
+  docEditKey = mode === 'edit' ? key : null;
+  const d = docEditKey ? doctorsContact.find(x => x.key === docEditKey) : null;
+  if (docEditKey && !d) { msg('Врач не найден'); return; }
+  $('docFormTitle').textContent = docEditKey ? 'Правка врача' : 'Новый врач';
+  $('docFam').value = d ? (d.fam || '') : '';
+  $('docFio').value = d ? (d.fio || '') : '';
+  $('docAddr').value = d ? (d.addr || '') : '';
+  $('docTel').value = d ? (d.tel || '') : '';
+  $('docRoute').value = d ? (d.route || '') : '';
+  $('docFormCard').style.display = 'block';
+  $('docsCard').style.display = 'none';
+  $('clsCard').style.display = 'none';
+}
+
+function closeDocForm() {
+  $('docFormCard').style.display = 'none';
+  docEditKey = null;
+}
+
+// Сохранение врача: офлайн — локальная правка + очередь, онлайн — сервер
+async function saveDocForm() {
+  const fam = $('docFam').value.trim();
+  const fio = $('docFio').value.trim();
+  const data = {
+    fam: fam, fio: fio,
+    addr: $('docAddr').value.trim(),
+    tel: $('docTel').value.trim(),
+    route: $('docRoute').value.trim()
+  };
+  if (!fam && !fio) { msg('Укажи хотя бы фамилию врача'); return; }
+  let rec;
+  if (docEditKey) {
+    rec = { id: 'de-' + uid(), type: 'docedit', key: docEditKey, ...data };
+  } else {
+    rec = { id: 'da-' + uid(), type: 'docadd', ...data };
+  }
+  // Локально применяем сразу — правка видна даже без сети
+  if (docEditKey) {
+    const d = doctorsContact.find(x => x.key === docEditKey);
+    if (d) {
+      Object.assign(d, data);
+      d.key = (fio || fam).toLowerCase();
+    }
+  } else {
+    doctorsContact.push({ key: (fio || fam).toLowerCase(), fam: fam, fio: fio,
+      addr: data.addr, tel: data.tel, route: data.route });
+  }
+  if (fio) rememberRef(docNames, renderDocNames, 'd-', 'docname', fio);
+  closeDocForm();
+  renderRefsDoc();
+  const r = await sendOrQueue([rec]);
+  msg(r.sent ? 'Врач сохранён на сервере'
+             : 'Нет сети: врач сохранён в телефоне и уйдёт в таблицу при синхронизации');
+}
+
+// --- Клиники: поиск по городу, карточки с правкой ---
 function renderRefsCls() {
   const q = ($('refSearchCls').value || '').trim().toLowerCase();
-  if (!q) {
-    $('clsCard').style.display = 'none';
-    return;
-  }
+  if (!q) { $('clsCard').style.display = 'none'; return; }
   const cls = clinics
     .filter(c => String(c.city || '').toLowerCase().indexOf(q) !== -1)
     .sort((a, b) => ruCmp(a.name, b.name));
   $('clsCard').style.display = 'block';
   $('refsCls').innerHTML = cls.length ? cls.map(c => `
     <div class="ref-item">
-      <b>${esc(c.name)}</b>${c.city ? ' — ' + esc(c.city) : ''}<br>
+      <b>${esc(c.name)}</b>${c.city ? ' — ' + esc(c.city) : ''}
+      <a class="edit" href="#" onclick="openClinicForm('edit','${esc(c.key)}');return false">✎</a><br>
       ${c.addr ? '📍 ' + esc(c.addr) + '<br>' : ''}
       ${c.day ? '🗓 ' + esc(c.day) + '<br>' : ''}
       ${c.tel ? `<a class="tel" href="${telHref(c.tel)}">📞 ${esc(c.tel)}</a>` : ''}
@@ -689,6 +729,64 @@ function renderRefsCls() {
       ${c.extra ? `<div class="extra">${esc(c.extra)}</div>` : ''}
     </div>`).join('')
     : '<div class="ref-item empty">Клиника не найдена.</div>';
+}
+
+// --- Форма клиники: добавление и правка ---
+function openClinicForm(mode, key) {
+  clinicEditKey = mode === 'edit' ? key : null;
+  const c = clinicEditKey ? clinics.find(x => x.key === clinicEditKey) : null;
+  if (clinicEditKey && !c) { msg('Клиника не найдена'); return; }
+  $('clinicFormTitle').textContent = clinicEditKey ? 'Правка клиники' : 'Новая клиника';
+  $('clinicCity').value = c ? (c.city || '') : '';
+  $('clinicName').value = c ? (c.name || '') : '';
+  $('clinicAddr').value = c ? (c.addr || '') : '';
+  $('clinicTel').value = c ? (c.tel || '') : '';
+  $('clinicExtra').value = c ? (c.extra || '') : '';
+  $('clinicRoute').value = c ? (c.route || '') : '';
+  $('clinicDay').value = c ? (c.day || '') : '';
+  $('clinicFormCard').style.display = 'block';
+  $('docsCard').style.display = 'none';
+  $('clsCard').style.display = 'none';
+}
+
+function closeClinicForm() {
+  $('clinicFormCard').style.display = 'none';
+  clinicEditKey = null;
+}
+
+async function saveClinicForm() {
+  const city = $('clinicCity').value.trim();
+  const name = $('clinicName').value.trim();
+  const data = {
+    city: city, name: name,
+    addr: $('clinicAddr').value.trim(),
+    tel: $('clinicTel').value.trim(),
+    extra: $('clinicExtra').value.trim(),
+    route: $('clinicRoute').value.trim(),
+    day: $('clinicDay').value.trim()
+  };
+  if (!name) { msg('Укажи наименование клиники'); return; }
+  let rec;
+  if (clinicEditKey) {
+    rec = { id: 'ce-' + uid(), type: 'clinicedit', key: clinicEditKey, ...data };
+  } else {
+    rec = { id: 'ca-' + uid(), type: 'clinicadd', ...data };
+  }
+  if (clinicEditKey) {
+    const c = clinics.find(x => x.key === clinicEditKey);
+    if (c) {
+      Object.assign(c, data);
+      c.key = (city + '|' + name).toLowerCase();
+    }
+  } else {
+    clinics.push({ key: (city + '|' + name).toLowerCase(), ...data });
+  }
+  if (city) rememberRef(medPoints, renderMedPoints, 'm-', 'medpoint', name);
+  closeClinicForm();
+  renderRefsCls();
+  const r = await sendOrQueue([rec]);
+  msg(r.sent ? 'Клиника сохранена на сервере'
+             : 'Нет сети: клиника сохранена в телефоне и уйдёт в таблицу при синхронизации');
 }
 
 // ================= СМЕНА =================
@@ -815,7 +913,6 @@ async function finishShift() {
   $('timeStart').value = '';
   $('timeEnd').value = '';
 
-  // Дашборд сразу учитывает только что завершённую смену
   shiftsData.push({
     date: batch[0].date, driverId: batch[0].driverId,
     carLabel: batch[0].carLabel, timeStart: batch[0].timeStart, timeEnd: tEnd,
@@ -851,14 +948,12 @@ if ('serviceWorker' in navigator) {
 // ================= ЗАПУСК =================
 async function init() {
   await loadDrivers();
-  // Автовход: если на этом телефоне уже входили — сразу на главный экран
   const auth = getAuth();
   if (auth && auth.fio) {
     const d = drivers.find(x => normFio(x.fio) === normFio(auth.fio));
     if (d) {
       enterApp(d.fio, d.role || '');
     } else {
-      // Нет сети или водителя нет в кэше — показываем вход с подсказками
       showScreen('loginScreen');
     }
   } else {

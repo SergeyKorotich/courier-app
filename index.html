@@ -6,11 +6,14 @@
 <title>Курьер — смены</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2f6fed">
+<!-- ПУТЬ К ЛОГО: ниже в строках rel="icon", apple-touch-icon и <img src="...">
+     замени 576.JPEG на свой файл или полный URL
+     (например https://SergeyKorotich.github.io/courier-app/576.JPEG) -->
 <link rel="icon" href="576.JPEG">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Курьер">
-<link rel="apple-touch-icon" href="576.JPEG">
+<link rel="https://github.com/SergeyKorotich/courier-app/blob/main/576.jpeg" href="576.jpeg">
 <style>
 body{font-family:system-ui,sans-serif;margin:0 auto;padding:12px;max-width:480px;background:#f4f6f9}
 .card{background:#fff;border-radius:12px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
@@ -21,6 +24,9 @@ input,select{width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-siz
 button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radius:8px;background:#2f6fed;color:#fff}
 button.small{background:#8892a0;padding:8px;font-size:14px}
 button.menu{padding:16px;font-size:17px;margin:10px 0}
+.searchrow{display:flex;gap:8px;align-items:center}
+.searchrow input{flex:1;margin:4px 0}
+.searchrow button{width:auto;padding:10px 12px;margin:0;font-size:16px}
 #msg{padding:8px;border-radius:8px;background:#eef3ff;margin:8px 0;font-size:14px;white-space:pre-wrap}
 table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 th,td{padding:7px 5px;border-bottom:1px solid #e8ecf3;text-align:left}
@@ -35,6 +41,7 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 .ref-item b{font-size:15px}
 .ref-item .lnk{color:#2f6fed;text-decoration:none;font-weight:bold;margin-right:10px}
 .ref-item .tel{color:#2f9e6e;text-decoration:none;font-weight:bold;margin-right:10px}
+.ref-item .edit{color:#8892a0;text-decoration:none;font-weight:bold}
 .ref-item .extra{white-space:pre-wrap;color:#555;font-size:13px;margin-top:2px}
 .empty{color:#888;font-size:14px}
 .authTabs{display:flex;gap:8px}
@@ -48,13 +55,13 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 <!-- ВХОД / РЕГИСТРАЦИЯ -->
 <div id="loginScreen" style="display:none">
   <div class="card">
+    <!-- ЛОГО: путь к файлу меняется здесь -->
     <img class="logo" src="576.JPEG" alt="Логотип">
     <h2 style="text-align:center">Курьер — смены</h2>
     <div class="authTabs">
       <button id="tabLogin" class="active" onclick="showAuthTab('login')">Вход</button>
       <button id="tabReg" onclick="showAuthTab('reg')">Регистрация</button>
     </div>
-
     <div id="loginPanel">
       <label>ФИО водителя</label>
       <input id="loginFio" list="loginFioList" placeholder="Начните вводить фамилию">
@@ -63,7 +70,6 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
       <input id="loginPin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN">
       <button onclick="doLogin()">Войти</button>
     </div>
-
     <div id="regPanel" style="display:none">
       <label>ФИО водителя</label>
       <input id="regFio" placeholder="Фамилия Имя Отчество">
@@ -81,6 +87,7 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 <!-- ГЛАВНЫЙ ЭКРАН -->
 <div id="menuScreen" style="display:none">
   <div class="card">
+    <!-- ЛОГО: путь к файлу меняется здесь -->
     <img class="logo-sm" src="576.JPEG" alt="Логотип">
   </div>
   <div class="card" id="dashCard">
@@ -182,11 +189,42 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 <div id="refsScreen" style="display:none">
   <div class="card">
     <h2>📖 Справочник</h2>
-    <label>Поиск врача по фамилии</label>
-    <input id="refSearchDoc" placeholder="Введите фамилию врача" oninput="renderRefsDoc()">
-    <label>Поиск клиники по городу</label>
-    <input id="refSearchCls" placeholder="Введите город" oninput="renderRefsCls()">
+    <div class="searchrow">
+      <input id="refSearchDoc" placeholder="Фамилия врача" oninput="renderRefsDoc()">
+      <button class="small" style="background:#2f9e6e" onclick="openDocForm('add')">➕ Врач</button>
+    </div>
+    <div class="searchrow">
+      <input id="refSearchCls" placeholder="Город клиники" oninput="renderRefsCls()">
+      <button class="small" style="background:#2f9e6e" onclick="openClinicForm('add')">➕ Клиника</button>
+    </div>
   </div>
+
+  <!-- ФОРМА ВРАЧА: добавление и правка -->
+  <div class="card" id="docFormCard" style="display:none">
+    <h3 id="docFormTitle">Новый врач</h3>
+    <label>Фамилия</label><input id="docFam">
+    <label>ФИО полностью</label><input id="docFio">
+    <label>Адрес</label><input id="docAddr">
+    <label>Телефон</label><input id="docTel" inputmode="tel">
+    <label>Ссылка на маршрут</label><input id="docRoute" inputmode="url">
+    <button style="background:#2f9e6e" onclick="saveDocForm()">Сохранить врача</button>
+    <button class="small" onclick="closeDocForm()">Отмена</button>
+  </div>
+
+  <!-- ФОРМА КЛИНИКИ: добавление и правка -->
+  <div class="card" id="clinicFormCard" style="display:none">
+    <h3 id="clinicFormTitle">Новая клиника</h3>
+    <label>Город</label><input id="clinicCity">
+    <label>Наименование</label><input id="clinicName">
+    <label>Адрес</label><input id="clinicAddr">
+    <label>Телефон</label><input id="clinicTel" inputmode="tel">
+    <label>Дополнение (кабинеты, пароль, время)</label><textarea id="clinicExtra" rows="3" style="width:100%;box-sizing:border-box;padding:10px;font-size:14px;border:1px solid #ccd3dd;border-radius:8px"></textarea>
+    <label>Ссылка на маршрут</label><input id="clinicRoute" inputmode="url">
+    <label>День недели</label><input id="clinicDay" placeholder="Пн., Ср., Пт.">
+    <button style="background:#2f9e6e" onclick="saveClinicForm()">Сохранить клинику</button>
+    <button class="small" onclick="closeClinicForm()">Отмена</button>
+  </div>
+
   <div class="card" id="docsCard" style="display:none">
     <h3>Врачи</h3>
     <div id="refsDocs"></div>
