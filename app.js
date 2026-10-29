@@ -7,6 +7,8 @@ const uid = () => Date.now() + '-' + Math.floor(Math.random() * 1e6);
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const hhmmToMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
 const minToHHMM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+// Русская сортировка: А–Я, с правильной позицией «ё»
+const ruCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'ru');
 
 let shift = null;          // текущая открытая смена
 let segments = [];         // отрезки этой смены
@@ -111,6 +113,8 @@ function currentDriver() {
 
 function applyRefs(data) {
   drivers = Array.isArray(data.drivers) ? data.drivers : [];
+  // Список водителей по алфавиту (А–Я)
+  drivers.sort((a, b) => ruCmp(a.fio, b.fio));
   if (Array.isArray(data.points) && data.points.length) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
   }
@@ -157,7 +161,8 @@ function renderDriverSelect(fioToSelect) {
 
 function renderCars() {
   const d = currentDriver();
-  const cars = (d && d.cars) || [];
+  // Автомобили водителя по алфавиту (марка + номер)
+  const cars = ((d && d.cars) || []).slice().sort((a, b) => ruCmp(carLabel(a), carLabel(b)));
   $('carSel').innerHTML = cars.length
     ? cars.map(c => `<option value="${carLabel(c)}">${carLabel(c)}</option>`).join('')
     : '<option value="">— нет автомобилей —</option>';
@@ -174,19 +179,29 @@ function selectCarByLabel(label) {
 // Подсказки точек: городские + междугородние, уникальные, по алфавиту
 function renderPoints() {
   const all = Array.from(new Set(points.concat(interPoints)));
-  $('pointsList').innerHTML = all.slice().sort().map(p => `<option value="${p}">`).join('');
+  $('pointsList').innerHTML = all
+    .sort(ruCmp)
+    .map(p => `<option value="${p}">`).join('');
 }
 function renderMedPoints() {
-  $('medPointsList').innerHTML = medPoints.slice().sort().map(p => `<option value="${p}">`).join('');
+  $('medPointsList').innerHTML = medPoints
+    .slice()
+    .sort(ruCmp)
+    .map(p => `<option value="${p}">`).join('');
 }
 function renderDocNames() {
-  $('docNamesList').innerHTML = docNames.slice().sort().map(p => `<option value="${p}">`).join('');
+  $('docNamesList').innerHTML = docNames
+    .slice()
+    .sort(ruCmp)
+    .map(p => `<option value="${p}">`).join('');
 }
 
 function onDriverChange() {
   if ($('driverSel').value === NEW_DRIVER) {
     $('driverPanel').style.display = 'block';
     $('newDriverFio').value = ''; $('newDriverCar').value = ''; $('newDriverPlate').value = '';
+    $('carPanel').style.display = 'none';
+    $('driverEditPanel').style.display = 'none';
   } else {
     $('driverPanel').style.display = 'none';
     renderCars();
@@ -206,6 +221,8 @@ async function saveDriver() {
   const carObj = { name: car, plate: plate, row: null };
   if (existing) existing.cars.push(carObj);
   else drivers.push({ fio: fio, cars: [carObj] });
+  // Сортируем заново и возвращаем выбор
+  drivers.sort((a, b) => ruCmp(a.fio, b.fio));
   localStorage.setItem('lastDriver', fio);
   localStorage.setItem('lastCar', carLabel(carObj));
   $('driverPanel').style.display = 'none';
@@ -234,6 +251,7 @@ function openCarPanel(mode) {
     $('carPlateInput').value = '';
   }
   $('carPanel').style.display = 'block';
+  $('driverEditPanel').style.display = 'none';
 }
 
 // Сохранение машины: новая строка у водителя либо правка существующей
@@ -261,6 +279,35 @@ async function saveCar() {
   $('carPanel').style.display = 'none';
   msg(r.sent ? 'Автомобиль сохранён: ' + label
              : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
+}
+
+// ================= ПРАВКА ФИО ВОДИТЕЛЯ =================
+function openDriverEdit() {
+  const d = currentDriver();
+  if (!d) { msg('Сначала выбери водителя'); return; }
+  $('editDriverFio').value = d.fio;
+  $('driverEditPanel').style.display = 'block';
+  $('carPanel').style.display = 'none';
+}
+
+// Правка ФИО: переименовываются все строки водителя на листе Drivers
+async function saveDriverEdit() {
+  const d = currentDriver();
+  if (!d) { msg('Сначала выбери водителя'); return; }
+  const fio = $('editDriverFio').value.trim().replace(/\s+/g, ' ');
+  if (!fio) { msg('Укажи новое ФИО'); return; }
+  if (fio.toLowerCase() === d.fio.toLowerCase()) { msg('ФИО не изменилось'); return; }
+  msg('Сохраняю ФИО…');
+  const r = await sendOrQueue([{ id: 'drvr-' + uid(), type: 'driverrename', fioOld: d.fio, fio: fio }]);
+  // Обновляем локальный список сразу: ФИО и его машины
+  d.fio = fio;
+  drivers.sort((a, b) => ruCmp(a.fio, b.fio));
+  localStorage.setItem('lastDriver', fio);
+  $('driverEditPanel').style.display = 'none';
+  renderDriverSelect(fio);
+  selectCarByLabel(localStorage.getItem('lastCar'));
+  msg(r.sent ? 'ФИО обновлено: ' + fio
+             : 'Нет сети: правка записана в очередь и применится при синхронизации');
 }
 
 // Канонизация с учётом справочника: совпадение без учёта регистра
@@ -544,31 +591,3 @@ loadDrivers().then(() => {
     $('shiftDate').value = todayISO();
   }
 });
-
-// ================= ПРАВКА ФИО ВОДИТЕЛЯ =================
-function openDriverEdit() {
-  const d = currentDriver();
-  if (!d) { msg('Сначала выбери водителя'); return; }
-  $('editDriverFio').value = d.fio;
-  $('driverEditPanel').style.display = 'block';
-  $('carPanel').style.display = 'none';
-}
-
-// Правка ФИО: переименовываются все строки водителя на листе Drivers
-async function saveDriverEdit() {
-  const d = currentDriver();
-  if (!d) { msg('Сначала выбери водителя'); return; }
-  const fio = $('editDriverFio').value.trim().replace(/\s+/g, ' ');
-  if (!fio) { msg('Укажи новое ФИО'); return; }
-  if (fio.toLowerCase() === d.fio.toLowerCase()) { msg('ФИО не изменилось'); return; }
-  msg('Сохраняю ФИО…');
-  const r = await sendOrQueue([{ id: 'drvr-' + uid(), type: 'driverrename', fioOld: d.fio, fio: fio }]);
-  // Обновляем локальный список сразу: ФИО и его машины
-  d.fio = fio;
-  localStorage.setItem('lastDriver', fio);
-  $('driverEditPanel').style.display = 'none';
-  renderDriverSelect(fio);
-  selectCarByLabel(localStorage.getItem('lastCar'));
-  msg(r.sent ? 'ФИО обновлено: ' + fio
-             : 'Нет сети: правка записана в очередь и применится при синхронизации');
-}
