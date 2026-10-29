@@ -9,6 +9,8 @@ const hhmmToMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); 
 const minToHHMM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 // Русская сортировка: А–Я, с правильной позицией «ё»
 const ruCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'ru');
+// Сравнение ФИО без учёта регистра и пробелов по краям
+const normFio = s => String(s || '').trim().toLowerCase();
 
 let shift = null;          // текущая открытая смена
 let segments = [];         // отрезки этой смены
@@ -118,6 +120,16 @@ function currentDriver() {
   return drivers[Number(v)] || null;
 }
 
+function isSupervisor(d) {
+  return String((d && d.role) || '').toLowerCase().indexOf('старший') !== -1;
+}
+
+// Водитель по ФИО (для дашборда на главном экране)
+function driverByFio(fio) {
+  const key = normFio(fio);
+  return drivers.find(d => normFio(d.fio) === key) || null;
+}
+
 function applyRefs(data) {
   drivers = Array.isArray(data.drivers) ? data.drivers : [];
   // Список водителей по алфавиту (А–Я)
@@ -164,11 +176,11 @@ async function loadDrivers() {
 
 function renderDriverSelect(fioToSelect) {
   $('driverSel').innerHTML = (drivers.length
-    ? drivers.map((d, i) => `<option value="${i}">${d.fio}</option>`).join('')
+    ? drivers.map((d, i) => `<option value="${i}">${d.fio}${isSupervisor(d) ? ' ★' : ''}</option>`).join('')
     : '<option value="">— нет водителей —</option>')
     + `<option value="${NEW_DRIVER}">➕ Добавить водителя…</option>`;
   if (fioToSelect) {
-    const idx = drivers.findIndex(d => d.fio.toLowerCase() === String(fioToSelect).toLowerCase());
+    const idx = drivers.findIndex(d => normFio(d.fio) === normFio(fioToSelect));
     if (idx >= 0) $('driverSel').value = String(idx);
   }
   renderCars();
@@ -221,6 +233,8 @@ function onDriverChange() {
   } else {
     $('driverPanel').style.display = 'none';
     renderCars();
+    const d = currentDriver();
+    if (d) localStorage.setItem('lastDriver', d.fio);
   }
 }
 
@@ -233,10 +247,10 @@ async function saveDriver() {
   if (!car && !plate) { msg('Укажи хотя бы автомобиль или госномер'); return; }
   msg('Сохраняю водителя…');
   const r = await sendOrQueue([{ id: 'drv-' + uid(), type: 'driver', fio: fio, car: car, plate: plate }]);
-  const existing = drivers.find(d => d.fio.toLowerCase() === fio.toLowerCase());
+  const existing = drivers.find(d => normFio(d.fio) === normFio(fio));
   const carObj = { name: car, plate: plate, row: null };
   if (existing) existing.cars.push(carObj);
-  else drivers.push({ fio: fio, cars: [carObj] });
+  else drivers.push({ fio: fio, cars: [carObj], role: '' });
   // Сортируем заново и возвращаем выбор
   drivers.sort((a, b) => ruCmp(a.fio, b.fio));
   localStorage.setItem('lastDriver', fio);
@@ -244,6 +258,7 @@ async function saveDriver() {
   $('driverPanel').style.display = 'none';
   renderDriverSelect(fio);
   selectCarByLabel(carLabel(carObj));
+  renderDashboard();
   msg(r.sent ? 'Водитель сохранён: ' + fio
              : 'Нет сети: водитель записан в очередь и появится в таблице при синхронизации');
 }
@@ -312,7 +327,7 @@ async function saveDriverEdit() {
   if (!d) { msg('Сначала выбери водителя'); return; }
   const fio = $('editDriverFio').value.trim().replace(/\s+/g, ' ');
   if (!fio) { msg('Укажи новое ФИО'); return; }
-  if (fio.toLowerCase() === d.fio.toLowerCase()) { msg('ФИО не изменилось'); return; }
+  if (normFio(fio) === normFio(d.fio)) { msg('ФИО не изменилось'); return; }
   msg('Сохраняю ФИО…');
   const r = await sendOrQueue([{ id: 'drvr-' + uid(), type: 'driverrename', fioOld: d.fio, fio: fio }]);
   // Обновляем локальный список сразу: ФИО и его машины
@@ -322,6 +337,7 @@ async function saveDriverEdit() {
   $('driverEditPanel').style.display = 'none';
   renderDriverSelect(fio);
   selectCarByLabel(localStorage.getItem('lastCar'));
+  renderDashboard();
   msg(r.sent ? 'ФИО обновлено: ' + fio
              : 'Нет сети: правка записана в очередь и применится при синхронизации');
 }
@@ -413,6 +429,11 @@ function showScreen(name) {
   $(name).style.display = 'block';
 }
 
+function goMenu() {
+  showScreen('menuScreen');
+  renderDashboard();
+}
+
 function showWork() {
   showScreen('workScreen');
   $('startCard').style.display = 'none';
@@ -436,6 +457,39 @@ function showStart() {
 // Пункт меню «Запись смены»: зависит от того, открыта ли смена
 function openWork() {
   if (shift) showWork(); else showStart();
+}
+
+// ================= ДАШБОРД НА ГЛАВНОМ ЭКРАНЕ =================
+// По текущему водителю за текущий месяц. У старшего — кнопка
+// со статистикой всех водителей.
+function renderDashboard() {
+  const d = driverByFio(localStorage.getItem('lastDriver'));
+  if (!d) {
+    $('dashCard').style.display = 'none';
+    return;
+  }
+  const month = todayISO().slice(0, 7);
+  const rows = shiftsData.filter(s => normFio(s.driverId) === normFio(d.fio) && String(s.date || '').startsWith(month));
+  let total = 0, city = 0, hw = 0, refuel = 0, minutes = 0;
+  rows.forEach(s => {
+    total += parseFloat(s.totalKm) || 0;
+    city += parseFloat(s.cityKm) || 0;
+    hw += parseFloat(s.highwayKm) || 0;
+    refuel += parseFloat(s.refuel) || 0;
+    const dm = hhmmToMin(s.duration);
+    if (!isNaN(dm)) minutes += dm;
+  });
+  $('dashCard').style.display = 'block';
+  $('dashTitle').textContent = `📊 ${d.fio} — ${month}`;
+  $('dashBody').innerHTML = `
+    <div class="dash-row"><span>Смен</span><span>${rows.length}</span></div>
+    <div class="dash-row"><span>Пробег, км</span><span>${total.toFixed(1)}</span></div>
+    <div class="dash-row"><span>Город, км</span><span>${city.toFixed(1)}</span></div>
+    <div class="dash-row"><span>Трасса, км</span><span>${hw.toFixed(1)}</span></div>
+    <div class="dash-row"><span>Заправка, л</span><span>${refuel ? refuel.toFixed(1) : '—'}</span></div>
+    <div class="dash-row"><span>Время в сменах</span><span>${minToHHMM(minutes)}</span></div>`;
+  // Старшему — дополнительное окно со статистикой всех водителей
+  $('supBtn').style.display = isSupervisor(d) ? 'block' : 'none';
 }
 
 // ================= ОТЧЁТЫ =================
@@ -468,8 +522,8 @@ function renderReport() {
 
   const byDriver = {};
   rows.forEach(s => {
-    const k = s.driverId || '—';
-    if (!byDriver[k]) byDriver[k] = { n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 };
+    const k = s.driverId ? normFio(s.driverId) : '— (без водителя)';
+    if (!byDriver[k]) byDriver[k] = { name: s.driverId || '— (без водителя)', n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 };
     const t = byDriver[k];
     t.n++;
     t.total += parseFloat(s.totalKm) || 0;
@@ -479,22 +533,22 @@ function renderReport() {
     const dMin = hhmmToMin(s.duration);
     if (!isNaN(dMin)) t.minutes += dMin;
   });
-  const names = Object.keys(byDriver).sort(ruCmp);
-  if (!names.length) {
+  const keys = Object.keys(byDriver).sort((a, b) => ruCmp(byDriver[a].name, byDriver[b].name));
+  if (!keys.length) {
     $('reportBody').innerHTML = '<div class="card">За ' + month + ' смен нет.</div>';
     return;
   }
-  const sum = names.reduce((acc, k) => {
+  const sum = keys.reduce((acc, k) => {
     const t = byDriver[k];
     acc.n += t.n; acc.total += t.total; acc.city += t.city;
     acc.hw += t.hw; acc.refuel += t.refuel; acc.minutes += t.minutes;
     return acc;
   }, { n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 });
 
-  const rowsHtml = names.map(k => {
+  const rowsHtml = keys.map(k => {
     const t = byDriver[k];
     return `<tr>
-      <td><a href="#" onclick="openDriverDetail('${k.replace(/'/g, "\\'")}')">${k}</a></td>
+      <td><a href="#" onclick="openDriverDetail('${t.name.replace(/'/g, "\\'")}')">${t.name}</a></td>
       <td>${t.n}</td>
       <td>${t.total.toFixed(1)}</td>
       <td>${t.city.toFixed(1)}</td>
@@ -521,9 +575,11 @@ function renderReport() {
     <div class="card">Время в сменах (всего): <b>${minToHHMM(sum.minutes)}</b></div>`;
 }
 
-// Детализация по водителю: все его смены за выбранный месяц
+// Детализация по водителю: все его смены за выбранный месяц.
+// Совпадение ФИО без учёта регистра.
 function renderDriverDetail(rows) {
-  const rows2 = rows.filter(s => (s.driverId || '—') === reportDetail);
+  const rows2 = rows.filter(s => normFio(s.driverId) === normFio(reportDetail) ||
+    (!s.driverId && normFio(reportDetail) === normFio('— (без водителя)')));
   if (!rows2.length) {
     $('reportBody').innerHTML = `<div class="card">У водителя «${reportDetail}» за месяц смен нет.</div>`;
     return;
@@ -551,8 +607,10 @@ function backToReport() {
 // ================= СПРАВОЧНИК =================
 function openRefs() {
   showScreen('refsScreen');
-  $('refSearch').value = '';
-  renderRefs();
+  $('refSearchDoc').value = '';
+  $('refSearchCls').value = '';
+  renderRefsDoc();
+  renderRefsCls();
 }
 
 // Экранирование спецсимволов в выводе
@@ -571,19 +629,14 @@ function telHref(tel) {
   return 'tel:' + digits;
 }
 
-// Информационное окно: контакты врачей и клиник (по кэшу, работает без сети)
-function renderRefs() {
-  const q = ($('refSearch').value || '').trim().toLowerCase();
+// Блок врачей: свой поиск
+function renderRefsDoc() {
+  const q = ($('refSearchDoc').value || '').trim().toLowerCase();
   const match = fields => !q || fields.some(f => String(f || '').toLowerCase().indexOf(q) !== -1);
-
   const docs = doctorsContact
     .filter(d => match([d.fio, d.fam, d.addr, d.tel]))
     .sort((a, b) => ruCmp(a.fio || a.fam, b.fio || b.fam));
-  const cls = clinics
-    .filter(c => match([c.name, c.city, c.addr, c.tel, c.day]))
-    .sort((a, b) => ruCmp(a.city + a.name, b.city + b.name));
-
-  const docsHtml = docs.length ? docs.map(d => `
+  $('refsDocs').innerHTML = docs.length ? docs.map(d => `
     <div class="ref-item">
       <b>${esc(d.fio || d.fam)}</b><br>
       ${d.addr ? '📍 ' + esc(d.addr) + '<br>' : ''}
@@ -591,8 +644,16 @@ function renderRefs() {
       ${d.route ? `<a class="lnk" target="_blank" rel="noopener" href="${esc(d.route)}">🧭 маршрут</a>` : ''}
     </div>`).join('')
     : '<div class="ref-item empty">Врач не найден.</div>';
+}
 
-  const clsHtml = cls.length ? cls.map(c => `
+// Блок клиник: свой поиск
+function renderRefsCls() {
+  const q = ($('refSearchCls').value || '').trim().toLowerCase();
+  const match = fields => !q || fields.some(f => String(f || '').toLowerCase().indexOf(q) !== -1);
+  const cls = clinics
+    .filter(c => match([c.name, c.city, c.addr, c.tel, c.day]))
+    .sort((a, b) => ruCmp(a.city + a.name, b.city + b.name));
+  $('refsCls').innerHTML = cls.length ? cls.map(c => `
     <div class="ref-item">
       <b>${esc(c.name)}</b>${c.city ? ' — ' + esc(c.city) : ''}<br>
       ${c.addr ? '📍 ' + esc(c.addr) + '<br>' : ''}
@@ -602,14 +663,6 @@ function renderRefs() {
       ${c.extra ? `<div class="extra">${esc(c.extra)}</div>` : ''}
     </div>`).join('')
     : '<div class="ref-item empty">Клиника не найдена.</div>';
-
-  $('refsBody').innerHTML = `
-    <div class="card">
-      <h3>Врачи (${docs.length})</h3>${docsHtml}
-    </div>
-    <div class="card">
-      <h3>Клиники (${cls.length})</h3>${clsHtml}
-    </div>`;
 }
 
 // ================= СМЕНА =================
@@ -744,13 +797,28 @@ async function finishShift() {
         ? `Нет сети: смена сохранена в телефоне и отправится автоматически.\nМаршрут: ${route}`
         : 'Не отправилось: ' + r.error + '\nСмена сохранена в очереди.'));
   showStart();
-  // Выбор водителя и автомобиля сохраняем — пользователь может
-  // сразу открыть следующую смену без повторного выбора
   $('odoStart').value = odoEnd;
   $('refuel').value = '';
   $('timeStart').value = '';
   $('timeEnd').value = '';
+
+  // Дашборд сразу учитывает только что завершённую смену
+  shiftsData.push({
+    date: shift ? '' : (shiftDateSafe()), driverId: batch[0].driverId,
+    carLabel: batch[0].carLabel, timeStart: batch[0].timeStart, timeEnd: tEnd,
+    totalKm: String(totalKm), cityKm: String(cityKm), highwayKm: String(highwayKm),
+    refuel: refuel === '' ? '' : String(refuel),
+    duration: minToHHMM(dMin), doctor: doctorInfo, route: route
+  });
+  localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
+  renderDashboard();
 }
+
+// Дата только что завершённой смены
+function shiftDateSafe() {
+  return batchDate || todayISO();
+}
+let batchDate = null;
 
 // ================= ВОССТАНОВЛЕНИЕ ПРИ ЗАПУСКЕ =================
 // Если приложение закрыли до завершения смены — смена вернётся как была
@@ -780,6 +848,7 @@ if ('serviceWorker' in navigator) {
 loadDrivers().then(() => {
   const restored = restoreState();
   showScreen('menuScreen');
+  renderDashboard();
   if (restored) {
     const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
     const last = segments.length ? segments[segments.length - 1] : null;

@@ -27,6 +27,8 @@ th,td{padding:7px 5px;border-bottom:1px solid #e8ecf3;text-align:left}
 th{background:#f0f3f8;font-size:12px;color:#555}
 tr.tot td{font-weight:bold;background:#f7f9fc}
 td a{color:#2f6fed;text-decoration:none;font-weight:bold}
+.dash-row{display:flex;justify-content:space-between;font-size:15px;padding:4px 0;border-bottom:1px solid #eef1f6}
+.dash-row span:last-child{font-weight:bold}
 .ref-item{border-top:1px solid #e8ecf3;padding:8px 0;font-size:14px;line-height:1.45}
 .ref-item b{font-size:15px}
 .ref-item .lnk{color:#2f6fed;text-decoration:none;font-weight:bold;margin-right:10px}
@@ -39,11 +41,17 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 <div id="msg"></div>
 
 <!-- ГЛАВНЫЙ ЭКРАН -->
-<div id="menuScreen" class="card">
-  <h2>Курьер — смены</h2>
-  <button class="menu" style="background:#2f6fed" onclick="openWork()">📋 Запись смены</button>
-  <button class="menu" style="background:#5a4fcf" onclick="openReport()">📊 Отчёты</button>
-  <button class="menu" style="background:#2f9e6e" onclick="openRefs()">📖 Справочник: врачи и клиники</button>
+<div id="menuScreen">
+  <div class="card" id="dashCard" style="display:none">
+    <h2 id="dashTitle">Дашборд</h2>
+    <div id="dashBody"></div>
+    <button class="small" style="background:#5a4fcf;display:none" id="supBtn" onclick="openReport()">📊 Статистика всех водителей</button>
+  </div>
+  <div class="card">
+    <button class="menu" style="background:#2f6fed" onclick="openWork()">📋 Запись смены</button>
+    <button class="menu" style="background:#5a4fcf" onclick="openReport()">📊 Отчёты</button>
+    <button class="menu" style="background:#2f9e6e" onclick="openRefs()">📖 Справочник: врачи и клиники</button>
+  </div>
 </div>
 
 <!-- ЗАПИСЬ СМЕНЫ -->
@@ -123,7 +131,7 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
     <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>
   </div>
 
-  <button class="small" onclick="showScreen('menuScreen')">← На главный экран</button>
+  <button class="small" onclick="goMenu()">← На главный экран</button>
 </div>
 
 <!-- ОТЧЁТЫ -->
@@ -135,18 +143,27 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
     <button class="small" onclick="backToReport()" id="backBtn" style="display:none">← К общему отчёту</button>
   </div>
   <div id="reportBody"></div>
-  <button class="small" onclick="showScreen('menuScreen')">← На главный экран</button>
+  <button class="small" onclick="goMenu()">← На главный экран</button>
 </div>
 
 <!-- СПРАВОЧНИК -->
 <div id="refsScreen" style="display:none">
   <div class="card">
-    <h2>📖 Справочник: врачи и клиники</h2>
-    <label>Поиск (ФИО, город, название, адрес)</label>
-    <input id="refSearch" placeholder="Например: Батуева или Агрыз" oninput="renderRefs()">
+    <h2>📖 Справочник</h2>
+    <label>Поиск врача (ФИО, адрес, телефон)</label>
+    <input id="refSearchDoc" placeholder="Например: Батуева" oninput="renderRefsDoc()">
+    <label>Поиск клиники (город, название, адрес)</label>
+    <input id="refSearchCls" placeholder="Например: Агрыз" oninput="renderRefsCls()">
   </div>
-  <div id="refsBody"></div>
-  <button class="small" onclick="showScreen('menuScreen')">← На главный экран</button>
+  <div class="card">
+    <h3>Врачи</h3>
+    <div id="refsDocs"></div>
+  </div>
+  <div class="card">
+    <h3>Клиники</h3>
+    <div id="refsCls"></div>
+  </div>
+  <button class="small" onclick="goMenu()">← На главный экран</button>
 </div>
 
 <script src="app.js"></script>
