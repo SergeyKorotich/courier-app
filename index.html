@@ -136,14 +136,16 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 
   <div class="card" id="shiftCard" style="display:none">
     <h2>Отрезок</h2>
-    <label>Тип отрезка</label>
-    <select id="segType">
+    <label>Тип маршрута</label>
+    <select id="segType" onchange="onSegTypeChange()">
       <option value="city">Городской</option>
       <option value="inter">Междугородний</option>
     </select>
-    <label>Откуда</label><input id="segFrom" list="pointsList" value="ОФИС">
-    <label>Куда</label><input id="segTo" list="pointsList">
+    <label>Откуда</label><input id="segFrom" list="segPointsList" value="ОФИС">
+    <label>Куда</label><input id="segTo" list="segPointsList">
+    <datalist id="segPointsList"></datalist>
     <datalist id="pointsList"></datalist>
+    <datalist id="interPointsList"></datalist>
     <label>Одометр в точке «Куда» (с начала смены)</label><input id="segKm" type="number" inputmode="decimal">
     <button onclick="addSegment()">Добавить отрезок</button>
   </div>

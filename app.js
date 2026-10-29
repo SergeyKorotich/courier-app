@@ -151,7 +151,8 @@ function doLogout() {
 function saveState() {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify({
-      shift: shift, segments: segments, doctorVisits: doctorVisits
+      shift: shift, segments: segments, doctorVisits: doctorVisits,
+      segType: $('segType') ? $('segType').value : 'city'
     }));
   } catch (e) { console.warn('Не удалось сохранить состояние:', e); }
 }
@@ -231,7 +232,7 @@ function applyRefs(data) {
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
   docNames = Array.from(new Set(docNames.concat(doctorsContact.map(d => d.fio).filter(Boolean))));
-  renderPoints(); renderMedPoints(); renderDocNames();
+  renderPoints(); renderInterPoints(); renderMedPoints(); renderDocNames();
   renderLoginHints();
   if (me) {
     const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
@@ -292,9 +293,22 @@ function selectCarByLabel(label) {
   updateCarButtons();
 }
 
+// Городские точки — из Points (с ОФИСом всегда в списке)
 function renderPoints() {
-  const all = Array.from(new Set(points.concat(interPoints)));
-  $('pointsList').innerHTML = all.sort(ruCmp).map(p => `<option value="${p}">`).join('');
+  $('pointsList').innerHTML = points.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+}
+// Междугородние точки — из InterPoints
+function renderInterPoints() {
+  $('interPointsList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+}
+// Датасписок «Откуда/Куда» переключается по типу маршрута
+function renderSegPoints() {
+  const src = $('segType').value === 'inter' ? interPoints : points;
+  $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${p}">`).join('');
+}
+function onSegTypeChange() {
+  renderSegPoints();
+  saveState();
 }
 function renderMedPoints() {
   const all = Array.from(new Set(medPoints.concat(clinics.map(c => c.name).filter(Boolean))));
@@ -466,6 +480,7 @@ function showWork() {
   $('docCard').style.display = 'block';
   $('finishCard').style.display = 'block';
   $('carSel').disabled = true;
+  renderSegPoints();
 }
 
 function showStart() {
@@ -796,6 +811,7 @@ function startShift() {
   };
   segments = [];
   doctorVisits = [];
+  $('segType').value = 'city';
   localStorage.setItem('lastCar', carLabelVal);
   saveState();
   showWork();
@@ -806,9 +822,12 @@ function startShift() {
 
 function addSegment() {
   const segType = $('segType').value;
-  const allPts = points.concat(interPoints);
-  const from = canonName($('segFrom').value, allPts);
-  const to = canonName($('segTo').value, allPts);
+  // Городской — список Points, междугородний — InterPoints
+  const refList = segType === 'inter' ? interPoints : points;
+  const refType = segType === 'inter' ? 'interpoint' : 'point';
+  const refRender = segType === 'inter' ? renderInterPoints : renderPoints;
+  const from = canonName($('segFrom').value, refList);
+  const to = canonName($('segTo').value, refList);
   const km = parseFloat(String($('segKm').value).replace(',', '.'));
   if (!from || !to || isNaN(km) || km < 0) { msg('Заполни «Откуда», «Куда» и пробег'); return; }
   const prevKm = segments.length ? segments[segments.length - 1].kmAtB : 0;
@@ -821,8 +840,9 @@ function addSegment() {
     ? 'Город'
     : ((from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса');
   segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, segType, ts: new Date().toISOString() });
-  rememberRef(points, renderPoints, 'p-', 'point', from);
-  rememberRef(points, renderPoints, 'p-', 'point', to);
+  // Новые точки уходят в свой справочник: городской — Points, междугородний — InterPoints
+  rememberRef(refList, refRender, segType === 'inter' ? 'i-' : 'p-', refType, from);
+  rememberRef(refList, refRender, segType === 'inter' ? 'i-' : 'p-', refType, to);
   saveState();
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
   const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
@@ -918,6 +938,7 @@ function restoreState() {
   shift = saved.shift;
   segments = saved.segments || [];
   doctorVisits = saved.doctorVisits || [];
+  $('segType').value = saved.segType === 'inter' ? 'inter' : 'city';
   if (segments.length) {
     const last = segments[segments.length - 1];
     $('segFrom').value = last.to;
@@ -948,6 +969,7 @@ async function init() {
   }
   const restored = restoreState();
   if (restored && me) {
+    renderSegPoints();
     const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
     const last = segments.length ? segments[segments.length - 1] : null;
     const lastInfo = last
