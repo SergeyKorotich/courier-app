@@ -456,11 +456,13 @@ async function saveDriverEdit() {
 }
 
 // ================= ПОДСЧЁТЫ =================
+// Нормализация имени точки. В отрезках «Ижевск» НЕ подменяется «ОФИС» —
+// схлопывание ОФИС/Ижевск происходит только в общем маршруте (compressRoute)
 function canonName(s, list) {
   s = (s || '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
   const lower = s.toLowerCase();
-  if (lower === 'офис' || lower === 'ижевск') return 'ОФИС';
+  if (lower === 'офис') return 'ОФИС';
   const found = (list || []).find(p => p.toLowerCase() === lower);
   if (found) return found;
   return lower.split(' ')
@@ -473,6 +475,8 @@ function areEquivalentPoints(p1, p2) {
   return (a === 'ОФИС' && b === 'ИЖЕВСК') || (a === 'ИЖЕВСК' && b === 'ОФИС');
 }
 
+// Общий маршрут смены: соседние ОФИС/Ижевск схлопываются,
+// последний Ижевск превращается в ОФИС
 function compressRoute(pointsList) {
   if (!pointsList || !pointsList.length) return '';
   const result = [pointsList[0]];
