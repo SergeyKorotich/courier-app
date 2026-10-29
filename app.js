@@ -34,6 +34,14 @@ const SHIFTS_KEY = 'shiftsCache';
 const AUTH_KEY = 'authCreds';
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
+// Продолжительность смены в минутах: сначала колонка «в минутах», затем чч:мм
+function shiftMinutes(s) {
+  const dm = parseFloat(s.durationMin);
+  if (!isNaN(dm) && dm > 0) return dm;
+  const d = hhmmToMin(s.duration);
+  return isNaN(d) ? 0 : d;
+}
+
 // ================= АВТОРИЗАЦИЯ =================
 function getAuth() {
   try { return JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); }
@@ -478,24 +486,19 @@ function renderDashboard() {
   if (!me) return;
   const month = todayISO().slice(0, 7);
   const rows = shiftsData.filter(s => normFio(s.driverId) === normFio(me.fio) && String(s.date || '').startsWith(month));
-  let total = 0, city = 0, hw = 0, refuel = 0, minutes = 0;
+  let total = 0, refuel = 0, minutes = 0;
   rows.forEach(s => {
     total += parseFloat(s.totalKm) || 0;
-    city += parseFloat(s.cityKm) || 0;
-    hw += parseFloat(s.highwayKm) || 0;
     refuel += parseFloat(s.refuel) || 0;
-    const dm = hhmmToMin(s.duration);
-    if (!isNaN(dm)) minutes += dm;
+    minutes += shiftMinutes(s);
   });
   $('dashCard').style.display = 'block';
   $('dashTitle').textContent = `📊 ${me.fio} — ${month}`;
   $('dashBody').innerHTML = `
     <div class="dash-row"><span>Смен</span><span>${rows.length}</span></div>
     <div class="dash-row"><span>Пробег, км</span><span>${total.toFixed(1)}</span></div>
-    <div class="dash-row"><span>Город, км</span><span>${city.toFixed(1)}</span></div>
-    <div class="dash-row"><span>Трасса, км</span><span>${hw.toFixed(1)}</span></div>
     <div class="dash-row"><span>Заправка, л</span><span>${refuel ? refuel.toFixed(1) : '—'}</span></div>
-    <div class="dash-row"><span>Время в сменах</span><span>${minToHHMM(minutes)}</span></div>`;
+    <div class="dash-row"><span>Продолжительность смен</span><span>${minToHHMM(minutes)}</span></div>`;
   $('supBtn').style.display = isSupervisor(me) ? 'block' : 'none';
 }
 
@@ -529,55 +532,37 @@ function renderReport() {
   const byDriver = {};
   rows.forEach(s => {
     const k = s.driverId ? normFio(s.driverId) : '— (без водителя)';
-    if (!byDriver[k]) byDriver[k] = { name: s.driverId || '— (без водителя)', n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 };
+    if (!byDriver[k]) byDriver[k] = { name: s.driverId || '— (без водителя)', n: 0, total: 0, refuel: 0, minutes: 0 };
     const t = byDriver[k];
     t.n++;
     t.total += parseFloat(s.totalKm) || 0;
-    t.city += parseFloat(s.cityKm) || 0;
-    t.hw += parseFloat(s.highwayKm) || 0;
     t.refuel += parseFloat(s.refuel) || 0;
-    const dMin = hhmmToMin(s.duration);
-    if (!isNaN(dMin)) t.minutes += dMin;
+    t.minutes += shiftMinutes(s);
   });
   const keys = Object.keys(byDriver).sort((a, b) => ruCmp(byDriver[a].name, byDriver[b].name));
   if (!keys.length) {
     $('reportBody').innerHTML = '<div class="card">За ' + month + ' смен нет.</div>';
     return;
   }
-  const sum = keys.reduce((acc, k) => {
-    const t = byDriver[k];
-    acc.n += t.n; acc.total += t.total; acc.city += t.city;
-    acc.hw += t.hw; acc.refuel += t.refuel; acc.minutes += t.minutes;
-    return acc;
-  }, { n: 0, total: 0, city: 0, hw: 0, refuel: 0, minutes: 0 });
 
+  // Время = средняя продолжительность смен водителя
   const rowsHtml = keys.map(k => {
     const t = byDriver[k];
+    const avg = t.n ? Math.round(t.minutes / t.n) : 0;
     return `<tr>
       <td><a href="#" onclick="openDriverDetail('${t.name.replace(/'/g, "\\'")}')">${t.name}</a></td>
       <td>${t.n}</td>
       <td>${t.total.toFixed(1)}</td>
-      <td>${t.city.toFixed(1)}</td>
-      <td>${t.hw.toFixed(1)}</td>
       <td>${t.refuel ? t.refuel.toFixed(1) : ''}</td>
-      <td>${minToHHMM(t.minutes)}</td>
+      <td>${minToHHMM(avg)}</td>
     </tr>`;
   }).join('');
 
   $('reportBody').innerHTML = `
     <div class="card"><h3>Общий отчёт по всем водителям</h3>
       <table>
-        <tr><th>Водитель</th><th>Смен</th><th>Км</th><th>Город</th><th>Трасса</th><th>Топл., л</th><th>Время</th></tr>
+        <tr><th>Водитель</th><th>Смен</th><th>Км</th><th>Топл., л</th><th>Время</th></tr>
         ${rowsHtml}
-        <tr class="tot">
-          <td>Итого</td>
-          <td>${sum.n}</td>
-          <td>${sum.total.toFixed(1)}</td>
-          <td>${sum.city.toFixed(1)}</td>
-          <td>${sum.hw.toFixed(1)}</td>
-          <td>${sum.refuel ? sum.refuel.toFixed(1) : ''}</td>
-          <td>${minToHHMM(sum.minutes)}</td>
-        </tr>
       </table>
     </div>`;
 }
@@ -592,7 +577,7 @@ function renderDriverDetail(rows) {
   const list = rows2.map(s => `
     <div class="card">
       <b>${s.date}</b> — ${s.carLabel || ''}
-      <div>${s.timeStart || ''}–${s.timeEnd || ''} (${s.duration || ''}), км: ${s.totalKm || 0} (город ${s.cityKm || 0}, трасса ${s.highwayKm || 0})${s.refuel ? `, заправка ${s.refuel} л` : ''}</div>
+      <div>${s.timeStart || ''}–${s.timeEnd || ''} (${s.duration || minToHHMM(shiftMinutes(s))}), км: ${s.totalKm || 0}${s.refuel ? `, заправка ${s.refuel} л` : ''}</div>
       <div style="font-size:13px;color:#555">Маршрут: ${s.route || '—'}</div>
       ${s.doctor ? `<div style="font-size:13px;color:#555">Врачи: ${s.doctor}</div>` : ''}
     </div>`).join('');
@@ -919,7 +904,8 @@ async function finishShift() {
     carLabel: batch[0].carLabel, timeStart: batch[0].timeStart, timeEnd: tEnd,
     totalKm: String(totalKm), cityKm: String(cityKm), highwayKm: String(highwayKm),
     refuel: refuel === '' ? '' : String(refuel),
-    duration: minToHHMM(dMin), doctor: doctorInfo, route: route
+    duration: minToHHMM(dMin), durationMin: dMin,
+    doctor: doctorInfo, route: route
   });
   localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
   renderDashboard();
