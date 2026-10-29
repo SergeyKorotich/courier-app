@@ -141,8 +141,6 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
     <label>Откуда</label><input id="segFrom" list="segPointsList" value="ОФИС">
     <label>Куда</label><input id="segTo" list="segPointsList">
     <datalist id="segPointsList"></datalist>
-    <datalist id="pointsList"></datalist>
-    <datalist id="interPointsList"></datalist>
     <label>Одометр в точке «Куда» (с начала смены)</label><input id="segKm" type="text" inputmode="decimal" placeholder="показание одометра, км">
     <button onclick="addSegment()">Добавить отрезок</button>
   </div>
@@ -151,8 +149,8 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
     <h2>Перевозка врача</h2>
     <label>Врач (ФИО)</label><input id="docName" list="docNamesList">
     <datalist id="docNamesList"></datalist>
-    <label>Куда везём (мед-точка)</label><input id="docPlace" list="medPointsList">
-    <datalist id="medPointsList"></datalist>
+    <label>Куда везём (мед-точка)</label><input id="docPlace" list="docPlaceList">
+    <datalist id="docPlaceList"></datalist>
     <label>Назначенное время посадки</label><input id="docTimeApp" type="time">
     <label>Фактическое время посадки</label><input id="docTimeBoard" type="time">
     <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить врача</button>
@@ -198,7 +196,6 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
   <!-- ФОРМА ВРАЧА: добавление и правка -->
   <div class="card" id="docFormCard" style="display:none">
     <h3 id="docFormTitle">Новый врач</h3>
-    <label>Фамилия</label><input id="docFam">
     <label>ФИО полностью</label><input id="docFio">
     <label>Адрес</label><input id="docAddr">
     <label>Телефон</label><input id="docTel" inputmode="tel">

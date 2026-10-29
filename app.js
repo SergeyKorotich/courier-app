@@ -15,7 +15,6 @@ let segments = [];
 let doctorVisits = [];
 let points = ['ОФИС'];
 let interPoints = [];
-let medPoints = [];
 let docNames = [];
 let drivers = [];
 let carEditMode = null;
@@ -264,12 +263,11 @@ function applyRefs(data) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
   }
   if (Array.isArray(data.interPoints)) interPoints = Array.from(new Set(data.interPoints));
-  if (Array.isArray(data.medPoints)) medPoints = Array.from(new Set(data.medPoints));
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
-  docNames = Array.from(new Set(docNames.concat(doctorsContact.map(d => d.fio).filter(Boolean))));
-  renderPoints(); renderInterPoints(); renderMedPoints(); renderDocNames();
+  // Подсказки врача — только из DoctorsRef (лист «Врачи» не подмешивается)
+  renderPoints(); renderInterPoints(); renderDocPlaceList(); renderDocNames();
   renderLoginHints();
   if (me) {
     const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
@@ -339,6 +337,10 @@ function renderPoints() {
 function renderInterPoints() {
   $('interPointsList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
+// Подсказки «Куда везём» — только междугородние точки (InterPoints)
+function renderDocPlaceList() {
+  $('docPlaceList').innerHTML = interPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
+}
 // Датасписок «Откуда/Куда» переключается по типу маршрута
 function renderSegPoints() {
   const src = $('segType').value === 'inter' ? interPoints : points;
@@ -347,10 +349,6 @@ function renderSegPoints() {
 function onSegTypeChange() {
   renderSegPoints();
   saveState();
-}
-function renderMedPoints() {
-  const all = Array.from(new Set(medPoints.concat(clinics.map(c => c.name).filter(Boolean))));
-  $('medPointsList').innerHTML = all.sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 function renderDocNames() {
   $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
@@ -692,13 +690,12 @@ function renderRefsDoc() {
   const q = ($('refSearchDoc').value || '').trim().toLowerCase();
   if (!q) { $('docsCard').style.display = 'none'; return; }
   const docs = doctorsContact
-    .filter(d => String(d.fam || '').toLowerCase().indexOf(q) !== -1 ||
-                 String(d.fio || '').toLowerCase().indexOf(q) !== -1)
-    .sort((a, b) => ruCmp(a.fio || a.fam, b.fio || b.fam));
+    .filter(d => String(d.fio || '').toLowerCase().indexOf(q) !== -1)
+    .sort((a, b) => ruCmp(a.fio, b.fio));
   $('docsCard').style.display = 'block';
   $('refsDocs').innerHTML = docs.length ? docs.map(d => `
     <div class="ref-item">
-      <b>${esc(d.fio || d.fam)}</b>
+      <b>${esc(d.fio)}</b>
       <a class="edit" href="#" onclick="openDocForm('edit','${esc(d.key)}');return false">✎</a><br>
       ${d.addr ? '📍 ' + esc(d.addr) + '<br>' : ''}
       ${d.tel ? `<a class="tel" href="${telHref(d.tel)}">📞 ${esc(d.tel)}</a>` : ''}
@@ -713,7 +710,6 @@ function openDocForm(mode, key) {
   const d = docEditKey ? doctorsContact.find(x => x.key === docEditKey) : null;
   if (docEditKey && !d) { msg('Врач не найден'); return; }
   $('docFormTitle').textContent = docEditKey ? 'Правка врача' : 'Новый врач';
-  $('docFam').value = d ? (d.fam || '') : '';
   $('docFio').value = d ? (d.fio || '') : '';
   $('docAddr').value = d ? (d.addr || '') : '';
   $('docTel').value = d ? (d.tel || '') : '';
@@ -730,15 +726,14 @@ function closeDocForm() {
 
 // Сохранение врача: офлайн — локальная правка + очередь, онлайн — сервер
 async function saveDocForm() {
-  const fam = $('docFam').value.trim();
   const fio = $('docFio').value.trim();
   const data = {
-    fam: fam, fio: fio,
+    fio: fio,
     addr: $('docAddr').value.trim(),
     tel: $('docTel').value.trim(),
     route: $('docRoute').value.trim()
   };
-  if (!fam && !fio) { msg('Укажи хотя бы фамилию врача'); return; }
+  if (!fio) { msg('Укажи ФИО врача'); return; }
   let rec;
   if (docEditKey) {
     rec = { id: 'de-' + uid(), type: 'docedit', key: docEditKey, ...data };
@@ -750,13 +745,13 @@ async function saveDocForm() {
     const d = doctorsContact.find(x => x.key === docEditKey);
     if (d) {
       Object.assign(d, data);
-      d.key = (fio || fam).toLowerCase();
+      d.key = fio.toLowerCase();
     }
   } else {
-    doctorsContact.push({ key: (fio || fam).toLowerCase(), fam: fam, fio: fio,
+    doctorsContact.push({ key: fio.toLowerCase(), fio: fio,
       addr: data.addr, tel: data.tel, route: data.route });
   }
-  if (fio) rememberRef(docNames, renderDocNames, 'd-', 'docname', fio);
+  rememberRef(docNames, renderDocNames, 'd-', 'docname', fio);
   closeDocForm();
   renderRefsDoc();
   const r = await sendOrQueue([rec]);
@@ -835,7 +830,7 @@ async function saveClinicForm() {
   } else {
     clinics.push({ key: (city + '|' + name).toLowerCase(), ...data });
   }
-  if (city) rememberRef(medPoints, renderMedPoints, 'm-', 'medpoint', name);
+  rememberRef(interPoints, renderInterPoints, 'i-', 'interpoint', name);
   closeClinicForm();
   renderRefsCls();
   const r = await sendOrQueue([rec]);
@@ -904,8 +899,9 @@ function addSegment() {
 }
 
 function addDoctorVisit() {
+  // Врач — только DoctorsRef (docNames), пункт — только InterPoints
   const doctor = canonName($('docName').value, docNames);
-  const place = canonName($('docPlace').value, medPoints);
+  const place = canonName($('docPlace').value, interPoints);
   const tApp = $('docTimeApp').value;
   const tBoard = $('docTimeBoard').value;
   if (!doctor || !place || !tApp || !tBoard) { msg('Укажи врача, куда везём и оба времени'); return; }
@@ -916,7 +912,8 @@ function addDoctorVisit() {
     timeAppointed: tApp, timeBoarding: tBoard,
     recordId: rid, shiftId: shift.id
   });
-  rememberRef(medPoints, renderMedPoints, 'm-', 'medpoint', place);
+  // Новые пункты уходят в InterPoints, новые врачи — в DoctorsRef
+  rememberRef(interPoints, renderInterPoints, 'i-', 'interpoint', place);
   rememberRef(docNames, renderDocNames, 'd-', 'docname', doctor);
   saveState();
   $('docName').value = ''; $('docPlace').value = '';
