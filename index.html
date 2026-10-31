@@ -1,282 +1,69 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Курьер — смены</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#2f6fed">
-  <link rel="icon" href="icon-192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Курьер">
-  <link rel="apple-touch-icon" href="icon-192.png">
-
-  <style>
-    :root {
-      --bg: #f5f5f5;
-      --card-bg: #ffffff;
-      --text: #333;
-      --muted: #888;
-      --primary: #2f6fed;
-      --danger: #d9534f;
-      --success: #5cb85c;
-    }
-    [data-theme="dark"] {
-      --bg: #1a1a1a;
-      --card-bg: #2d2d2d;
-      --text: #e0e0e0;
-      --muted: #aaa;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      margin: 0;
-      padding: 8px;
-    }
-    .card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      margin-bottom: 12px;
-    }
-    h2 { margin-top: 0; }
-    label { display: block; margin-top: 8px; font-weight: 600; }
-    input, select, button {
-      width: 100%;
-      padding: 8px 12px;
-      margin-top: 4px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      box-sizing: border-box;
-    }
-    button {
-      background: var(--primary);
-      color: white;
-      border: none;
-      cursor: pointer;
-      margin-top: 12px;
-    }
-    button:hover { opacity: 0.9; }
-    #msg {
-      margin-bottom: 12px;
-      padding: 8px;
-      border-radius: 8px;
-      text-align: center;
-      display: none;
-    }
-    #msg.error { background: #fdd; color: var(--danger); }
-    #msg.success { background: #dfd; color: var(--success); }
-    #msg.info { background: #eef; color: #0055aa; }
-
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-    th { background: var(--card-bg); }
-
-    .dash-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; }
-    .ref-item { margin-bottom: 8px; padding: 8px; border: 1px solid #eee; border-radius: 6px; }
-    .extra { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Курьер — смены</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f6fed">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Курьер">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+/* Ваш CSS здесь */
+</style>
 </head>
 <body>
-  <div id="msg"></div>
+<div id="msg"></div>
 
-  <!-- ВХОД / РЕГИСТРАЦИЯ -->
-  <div id="loginScreen" style="display:none">
-    <div class="card">
-      <h2>Вход / Регистрация</h2>
-      <div id="tabLogin" class="active" style="cursor:pointer; display:inline-block; margin-right:10px; font-weight:bold;">Вход</div>
-      <div id="tabReg" style="cursor:pointer; display:inline-block;">Регистрация</div>
+<!-- ВХОД / РЕГИСТРАЦИЯ -->
+<div id="loginScreen" style="display:none">
+<!-- ... -->
+</div>
 
-      <div id="loginPanel">
-        <label>ФИО водителя</label>
-        <input id="loginFio" placeholder="Иванов И.И.">
-        <label>PIN</label>
-        <input type="password" id="loginPin" placeholder="****">
-        <button onclick="doLogin()">Войти</button>
-      </div>
+<!-- ГЛАВНЫЙ ЭКРАН -->
+<div id="menuScreen" style="display:none">
+<!-- ... -->
+</div>
 
-      <div id="regPanel" style="display:none">
-        <label>ФИО</label>
-        <input id="regFio" placeholder="Иванов И.И.">
-        <label>PIN (4–8 цифр)</label>
-        <input type="password" id="regPin" placeholder="****">
-        <label>Марка авто</label>
-        <input id="regCar" placeholder="Lada Vesta">
-        <label>Госномер</label>
-        <input id="regPlate" placeholder="А000АА00">
-        <button onclick="doRegister()">Зарегистрироваться</button>
-      </div>
-    </div>
-  </div>
+<!-- ПУТЕВЫЕ ЛИСТЫ -->
+<div id="plScreen" style="display:none">
+<div class="card">
+<h2>🧾 Путевые листы</h2>
+<label>Период</label>
+<select id="plPeriod" onchange="plRenderList()">
+<option value="day">День</option>
+<option value="week">Неделя</option>
+<option value="month">Месяц</option>
+</select>
+<label>Дата (любая внутри периода)</label>
+<input id="plDate" type="date" onchange="plRenderList()">
+<button onclick="plDownloadMerged()">Скачать объединённые путевые листы</button>
+</div>
+</div>
 
-  <!-- ГЛАВНЫЙ ЭКРАН (МЕНЮ) -->
-  <div id="menuScreen" style="display:none">
-    <div class="card" id="dashCard" style="display:none;">
-      <h3 id="dashTitle"></h3>
-      <div id="dashBody"></div>
-    </div>
-    <div class="card">
-      <button onclick="openWork()">📝 Начать/продолжить смену</button>
-      <button onclick="showScreen('plScreen')">🧾 Путевые листы</button>
-      <button onclick="if(isSupervisor(me)) openReport(); else msg('Доступ только для старшего')">📊 Отчёты (старший)</button>
-      <button onclick="openRefs()">🗂 Справочник</button>
-    </div>
-    <button style="width:auto; padding:8px 16px;" onclick="doLogout()">Выйти</button>
-  </div>
-
-  <!-- ЭКРАН СМЕНЫ -->
-  <div id="workScreen" style="display:none">
-    <!-- Старт смены -->
-    <div id="startCard" style="display:none">
-      <div class="card">
-        <h2>Старт смены</h2>
-        <label>Дата</label>
-        <input type="date" id="shiftDate">
-        <label>Время начала</label>
-        <input type="time" id="timeStart">
-        <label>Одометр (начало)</label>
-        <input type="number" step="0.1" id="odoStart" placeholder="км">
-        <label>Автомобиль</label>
-        <select id="carSel" onchange="onCarChange()"></select>
-        <div id="carPanel" style="display:none; margin-top:12px;">
-          <input id="carNameInput" placeholder="Марка/модель">
-          <input id="carPlateInput" placeholder="Госномер">
-          <button onclick="saveCar()">Сохранить авто</button>
-          <button onclick="$('carPanel').style.display='none'" style="background:#ccc;">Отмена</button>
-        </div>
-        <button onclick="startShift()">Начать смену</button>
-      </div>
-    </div>
-
-    <!-- Работа в смене -->
-    <div id="shiftCard" style="display:none">
-      <div class="card">
-        <h3>Текущая смена: <span id="curCarLabel"></span></h3>
-        <p>Водитель: <b id="curDriverName"></b></p>
-        <p>Дата: <b id="curShiftDate"></b>, время: <b id="curTimeStart"></b></p>
-      </div>
-
-      <div class="card">
-        <h4>Новый отрезок</h4>
-        <label>Тип маршрута</label>
-        <select id="segType" onchange="onSegTypeChange()">
-          <option value="city">Городской</option>
-          <option value="inter">Междугородний</option>
-        </select>
-        <label>Откуда</label>
-        <input list="segPointsList" id="segFrom">
-        <datalist id="segPointsList"></datalist>
-        <label>Куда</label>
-        <input list="segPointsList" id="segTo">
-        <label>Одометр (на конец отрезка)</label>
-        <input type="number" step="0.1" id="segKm" placeholder="км">
-        <button onclick="addSegment()">Добавить отрезок</button>
-      </div>
-
-      <div class="card">
-        <h4>Перевозка врача</h4>
-        <label>Врач</label>
-        <input list="docNamesList" id="docName">
-        <datalist id="docNamesList"></datalist>
-        <label>Куда везём</label>
-        <input list="docPlaceList" id="docPlace">
-        <datalist id="docPlaceList"></datalist>
-        <label>Время приёма</label>
-        <input type="time" id="docTimeApp">
-        <label>Время посадки</label>
-        <input type="time" id="docTimeBoard">
-        <button onclick="addDoctorVisit()">Добавить перевозку</button>
-      </div>
-
-      <div class="card">
-        <h4>Завершение смены</h4>
-        <label>Время окончания</label>
-        <input type="time" id="timeEnd">
-        <label>Заправка (л)</label>
-        <input type="number" step="0.1" id="refuel" placeholder="л">
-        <button style="background:#d9534f;" onclick="finishShift()">Завершить смену</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ОТЧЁТЫ (СТАРШИЙ) -->
-  <div id="reportScreen" style="display:none">
-    <div class="card">
-      <h3>Отчёт по водителям</h3>
-      <label>Месяц (ГГГГ-ММ)</label>
-      <input type="month" id="reportMonth">
-      <button onclick="openReport()">Показать отчёт</button>
-      <button id="backBtn" style="display:none;" onclick="backToReport()">← Назад к общему отчёту</button>
-    </div>
-    <div id="reportBody"></div>
-  </div>
-
-  <!-- СПРАВОЧНИК -->
-  <div id="refsScreen" style="display:none">
-    <div class="card">
-      <h3>Справочник врачей</h3>
-      <input id="refSearchDoc" oninput="renderRefsDoc()" placeholder="Поиск по ФИО врача">
-      <button id="clearDocBtn" style="display:none;" onclick="$('refSearchDoc').value=''; renderRefsDoc()">×</button>
-      <div id="docsCard" style="margin-top:8px;"></div>
-    </div>
-
-    <div class="card">
-      <h3>Справочник клиник</h3>
-      <input id="refSearchCls" oninput="renderRefsCls()" placeholder="Поиск по городу клиники">
-      <button id="clearClsBtn" style="display:none;" onclick="$('refSearchCls').value=''; renderRefsCls()">×</button>
-      <div id="clsCard" style="margin-top:8px;"></div>
-    </div>
-
-    <!-- Форма врача -->
-    <div id="docFormCard" class="card" style="display:none;">
-      <h4 id="docFormTitle"></h4>
-      <input id="docFio" placeholder="ФИО врача">
-      <input id="docAddr" placeholder="Адрес">
-      <input id="docTel" placeholder="Телефон">
-      <input id="docRoute" placeholder="Ссылка на маршрут">
-      <button onclick="saveDocForm()">Сохранить</button>
-      <button onclick="closeDocForm()" style="background:#ccc;">Отмена</button>
-    </div>
-
-    <!-- Форма клиники -->
-    <div id="clinicFormCard" class="card" style="display:none;">
-      <h4 id="clinicFormTitle"></h4>
-      <input id="clinicCity" placeholder="Город">
-      <input id="clinicName" placeholder="Название клиники">
-      <input id="clinicAddr" placeholder="Адрес">
-      <input id="clinicTel" placeholder="Телефон">
-      <input id="clinicExtra" placeholder="Доп. информация">
-      <input id="clinicRoute" placeholder="Ссылка на маршрут">
-      <input id="clinicDay" placeholder="День недели приёма">
-      <button onclick="saveClinicForm()">Сохранить</button>
-      <button onclick="closeClinicForm()" style="background:#ccc;">Отмена</button>
-    </div>
-  </div>
-
-  <!-- ПУТЕВЫЕ ЛИСТЫ -->
-  <div id="plScreen" style="display:none">
-    <div class="card">
-      <h2>🧾 Путевые листы</h2>
-      <label>Период</label>
-      <select id="plPeriod" onchange="plRenderList()">
-        <option value="day">День</option>
-        <option value="week">Неделя</option>
-        <option value="month">Месяц</option>
-      </select>
-      <label>Дата (любая внутри периода)</label>
-      <input id="plDate" type="date" onchange="plRenderList()" value="">
-      <label>Email для отправки (опционально)</label>
-      <input id="plEmail" type="email" placeholder="email@example.com">
-      <button onclick="plDownloadMerged()">Скачать объединённые путевые листы</button>
-      <p id="plStatus" style="margin-top:8px; color:#666;"></p>
-    </div>
-    <div id="plList" style="margin-top:16px;"></div>
-  </div>
-
-  <script src="app.js"></script>
+<script>
+function plDownloadMerged() {
+const params = {
+action: 'downloadMerged',
+dates: $('#plDate').val(),
+};
+fetch('/path/to/api', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(params)
+})
+.then(response => response.blob())
+.then(blob => {
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'merged-pl.pdf';
+a.click();
+});
+}
+</script>
 </body>
 </html>
