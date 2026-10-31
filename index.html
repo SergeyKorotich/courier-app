@@ -12,37 +12,53 @@
 <meta name="apple-mobile-web-app-title" content="Курьер">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
-body{font-family:system-ui,sans-serif;margin:0 auto;padding:12px;max-width:480px;background:#f4f6f9}
-.card{background:#fff;border-radius:12px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+:root{
+  --bg:#f4f6f9; --card:#ffffff; --text:#1c1e21; --muted:#555; --faint:#888;
+  --border:#ccd3dd; --sep:#e8ecf3; --row-sep:#eef1f6;
+  --input-bg:#ffffff; --input-border:#ccd3dd;
+  --msg-bg:#eef3ff; --table-head:#f0f3f8; --tab-bg:#e6ebf3; --tab-text:#333;
+}
+html[data-theme="dark"]{
+  --bg:#121417; --card:#1d2025; --text:#e6e8eb; --muted:#9aa0a6; --faint:#8a8f96;
+  --border:#3a3f46; --sep:#2a2e34; --row-sep:#262a30;
+  --input-bg:#23262b; --input-border:#3a3f46;
+  --msg-bg:#1c2333; --table-head:#262a31; --tab-bg:#2a2e34; --tab-text:#e6e8eb;
+}
+body{font-family:system-ui,sans-serif;margin:0 auto;padding:12px;max-width:480px;background:var(--bg);color:var(--text)}
+.card{background:var(--card);border-radius:12px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 h2{font-size:16px;margin:4px 0}
-h3{font-size:14px;margin:10px 0 4px;color:#444}
-label{font-size:13px;color:#555}
-input,select{width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px;border:1px solid #ccd3dd;border-radius:8px}
+h3{font-size:14px;margin:10px 0 4px;color:var(--muted)}
+label{font-size:13px;color:var(--muted)}
+input,select,textarea{width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--text)}
 button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radius:8px;background:#2f6fed;color:#fff}
 button.small{background:#8892a0;padding:8px;font-size:14px}
 button.menu{padding:16px;font-size:17px;margin:10px 0}
 .searchrow{display:flex;gap:8px;align-items:center}
-.searchrow input{flex:1;margin:4px 0}
-.searchrow button{width:auto;padding:10px 12px;margin:0;font-size:16px}
-#msg{padding:8px;border-radius:8px;background:#eef3ff;margin:8px 0;font-size:14px;white-space:pre-wrap}
-table{width:100%;border-collapse:collapse;font-size:14px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-th,td{padding:7px 5px;border-bottom:1px solid #e8ecf3;text-align:left}
-th{background:#f0f3f8;font-size:12px;color:#555}
+.searchrow .search-wrap{flex:1;position:relative;margin:4px 0}
+.search-wrap input{width:100%;padding-right:36px;margin:0}
+.clear-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:18px;line-height:1;padding:0;margin:0;display:none}
+.icon-btn{width:44px;height:44px;min-width:44px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:22px;line-height:1;padding:0;margin:0}
+.theme-btn{position:absolute;top:8px;right:8px;width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:17px;line-height:1;padding:0;margin:0}
+#msg{padding:8px;border-radius:8px;background:var(--msg-bg);margin:8px 0;font-size:14px;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+th,td{padding:7px 5px;border-bottom:1px solid var(--sep);text-align:left;color:var(--text)}
+th{background:var(--table-head);font-size:12px;color:var(--muted)}
 td a{color:#2f6fed;text-decoration:none;font-weight:bold}
-.dash-row{display:flex;justify-content:space-between;font-size:15px;padding:4px 0;border-bottom:1px solid #eef1f6}
+.dash-row{display:flex;justify-content:space-between;font-size:15px;padding:4px 0;border-bottom:1px solid var(--row-sep)}
 .dash-row span:last-child{font-weight:bold}
 .logo{display:block;margin:6px auto 2px;width:96px;height:96px;object-fit:contain}
 .logo-sm{display:block;margin:0 auto;width:48px;height:48px;object-fit:contain}
-.ref-item{border-top:1px solid #e8ecf3;padding:8px 0;font-size:14px;line-height:1.45}
+.ref-item{border-top:1px solid var(--sep);padding:8px 0;font-size:14px;line-height:1.45}
 .ref-item b{font-size:15px}
 .ref-item .lnk{color:#2f6fed;text-decoration:none;font-weight:bold;margin-right:10px}
 .ref-item .tel{color:#2f9e6e;text-decoration:none;font-weight:bold;margin-right:10px}
 .ref-item .edit{color:#8892a0;text-decoration:none;font-weight:bold}
-.ref-item .extra{white-space:pre-wrap;color:#555;font-size:13px;margin-top:2px}
-.empty{color:#888;font-size:14px}
+.ref-item .extra{white-space:pre-wrap;color:var(--muted);font-size:13px;margin-top:2px}
+.empty{color:var(--faint);font-size:14px}
 .authTabs{display:flex;gap:8px}
-.authTabs button{background:#e6ebf3;color:#333;width:auto;flex:1}
+.authTabs button{background:var(--tab-bg);color:var(--tab-text);width:auto;flex:1}
 .authTabs button.active{background:#2f6fed;color:#fff}
+body,.card,input,select,textarea,button,table,th,td,.ref-item,.dash-row,#msg{transition:background-color .2s ease,color .2s ease,border-color .2s ease}
 </style>
 </head>
 <body>
@@ -81,7 +97,8 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
 
 <!-- ГЛАВНЫЙ ЭКРАН -->
 <div id="menuScreen" style="display:none">
-  <div class="card">
+  <div class="card" style="position:relative">
+    <button id="themeBtn" class="theme-btn" onclick="toggleTheme()" aria-label="Сменить тему">🌙</button>
     <img class="logo-sm" src="icon-192.png" alt="Логотип">
   </div>
   <div class="card" id="dashCard">
@@ -184,12 +201,18 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
   <div class="card">
     <h2>📖 Справочник</h2>
     <div class="searchrow">
-      <input id="refSearchDoc" placeholder="Фамилия врача" oninput="renderRefsDoc()">
-      <button class="small" style="background:#2f9e6e" onclick="openDocForm('add')">➕ Врач</button>
+      <div class="search-wrap">
+        <input id="refSearchDoc" placeholder="Фамилия врача" oninput="renderRefsDoc()">
+        <button class="clear-btn" id="clearDocBtn" onclick="clearRefSearch('doc')" aria-label="Очистить поиск">×</button>
+      </div>
+      <button class="icon-btn" onclick="openDocForm('add')" aria-label="Добавить врача">＋</button>
     </div>
     <div class="searchrow">
-      <input id="refSearchCls" placeholder="Город клиники" oninput="renderRefsCls()">
-      <button class="small" style="background:#2f9e6e" onclick="openClinicForm('add')">➕ Клиника</button>
+      <div class="search-wrap">
+        <input id="refSearchCls" placeholder="Город клиники" oninput="renderRefsCls()">
+        <button class="clear-btn" id="clearClsBtn" onclick="clearRefSearch('cls')" aria-label="Очистить поиск">×</button>
+      </div>
+      <button class="icon-btn" onclick="openClinicForm('add')" aria-label="Добавить клинику">＋</button>
     </div>
   </div>
 
@@ -211,7 +234,7 @@ td a{color:#2f6fed;text-decoration:none;font-weight:bold}
     <label>Наименование</label><input id="clinicName">
     <label>Адрес</label><input id="clinicAddr">
     <label>Телефон</label><input id="clinicTel" inputmode="tel">
-    <label>Дополнение (кабинеты, пароль, время)</label><textarea id="clinicExtra" rows="3" style="width:100%;box-sizing:border-box;padding:10px;font-size:14px;border:1px solid #ccd3dd;border-radius:8px"></textarea>
+    <label>Дополнение (кабинеты, пароль, время)</label><textarea id="clinicExtra" rows="3" style="width:100%;box-sizing:border-box;padding:10px;font-size:14px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--text)"></textarea>
     <label>Ссылка на маршрут</label><input id="clinicRoute" inputmode="url">
     <label>День недели</label><input id="clinicDay" placeholder="Пн., Ср., Пт.">
     <button style="background:#2f9e6e" onclick="saveClinicForm()">Сохранить клинику</button>

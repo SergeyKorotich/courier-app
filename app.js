@@ -35,6 +35,28 @@ const AUTH_KEY = 'authCreds';
 const MAX_TRIES = 3; // попыток на пакет до пропуска
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
+// ================= ТЕМА =================
+const THEME_KEY = 'theme';
+
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  const btn = $('themeBtn');
+  if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+}
+
+// По умолчанию — тема системы; ручной выбор сохраняется и приоритетнее
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  applyTheme(saved === 'dark' || saved === 'light' ? saved : system);
+}
+
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+
 // Продолжительность смены в минутах: сначала колонка «в минутах», затем чч:мм
 function shiftMinutes(s) {
   const dm = parseFloat(s.durationMin);
@@ -529,7 +551,6 @@ function durationMin(tStart, tEnd) {
 }
 
 // Добавление нового пункта в справочник: локально + запись на сервер.
-// refRender может быть null-safe функцией — она вызывается только при новом имени.
 function rememberRef(list, refType, name) {
   if (!name || list.includes(name)) return;
   list.push(name);
@@ -683,8 +704,8 @@ function renderDriverDetail(rows) {
     <div class="card">
       <b>${esc(s.date)}</b> — ${esc(s.carLabel || '')}
       <div>${s.timeStart || ''}–${s.timeEnd || ''} (${s.duration || minToHHMM(shiftMinutes(s))}), км: ${s.totalKm || 0}${s.refuel ? `, заправка ${s.refuel} л` : ''}</div>
-      <div style="font-size:13px;color:#555">Маршрут: ${esc(s.route || '—')}</div>
-      ${s.doctor ? `<div style="font-size:13px;color:#555">Врачи: ${esc(s.doctor)}</div>` : ''}
+      <div style="font-size:13px;color:var(--muted)">Маршрут: ${esc(s.route || '—')}</div>
+      ${s.doctor ? `<div style="font-size:13px;color:var(--muted)">Врачи: ${esc(s.doctor)}</div>` : ''}
     </div>`).join('');
   $('reportBody').innerHTML = `<div class="card"><h3>${esc(reportDetail)}</h3>Смен за месяц: ${rows2.length}</div>` + list;
 }
@@ -704,10 +725,23 @@ function openRefs() {
   showScreen('refsScreen');
   $('refSearchDoc').value = '';
   $('refSearchCls').value = '';
+  const cd = $('clearDocBtn'); if (cd) cd.style.display = 'none';
+  const cc = $('clearClsBtn'); if (cc) cc.style.display = 'none';
   $('docsCard').style.display = 'none';
   $('clsCard').style.display = 'none';
   closeDocForm();
   closeClinicForm();
+}
+
+// Сброс поля поиска справочника и перерисовка списка
+function clearRefSearch(which) {
+  if (which === 'cls') {
+    $('refSearchCls').value = '';
+    renderRefsCls();
+  } else {
+    $('refSearchDoc').value = '';
+    renderRefsDoc();
+  }
 }
 
 function esc(s) {
@@ -727,9 +761,12 @@ function telHref(tel) {
 // --- Врачи: поиск, карточки с правкой (ФИО — единственный ключ) ---
 function renderRefsDoc() {
   const q = ($('refSearchDoc').value || '').trim().toLowerCase();
+  const cb = $('clearDocBtn');
+  if (cb) cb.style.display = q ? 'block' : 'none';
   if (!q) { $('docsCard').style.display = 'none'; return; }
+  // Строгий префикс без учёта регистра: «а» → все на «А», «ал» → все на «Ал»
   const docs = doctorsContact
-    .filter(d => String(d.fio || '').toLowerCase().indexOf(q) !== -1)
+    .filter(d => String(d.fio || '').trim().toLowerCase().indexOf(q) === 0)
     .sort((a, b) => ruCmp(a.fio, b.fio));
   $('docsCard').style.display = 'block';
   $('refsDocs').innerHTML = docs.length ? docs.map(d => `
@@ -801,9 +838,11 @@ async function saveDocForm() {
 // --- Клиники: поиск по городу, карточки с правкой ---
 function renderRefsCls() {
   const q = ($('refSearchCls').value || '').trim().toLowerCase();
+  const cb = $('clearClsBtn');
+  if (cb) cb.style.display = q ? 'block' : 'none';
   if (!q) { $('clsCard').style.display = 'none'; return; }
   const cls = clinics
-    .filter(c => String(c.city || '').toLowerCase().indexOf(q) !== -1)
+    .filter(c => String(c.city || '').trim().toLowerCase().indexOf(q) === 0)
     .sort((a, b) => ruCmp(a.name, b.name));
   $('clsCard').style.display = 'block';
   $('refsCls').innerHTML = cls.length ? cls.map(c => `
@@ -1061,6 +1100,8 @@ if ('serviceWorker' in navigator) {
 
 // ================= ЗАПУСК =================
 async function init() {
+  // Тема применяется до показа экранов — без вспышки светлого на тёмном телефоне
+  initTheme();
   // Смена восстанавливается сразу, без ожидания сети:
   // офлайн-запуск не должен её терять
   const restored = restoreState();
