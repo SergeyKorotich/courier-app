@@ -1149,7 +1149,42 @@ function openPl() {
   if (!$('plDate').value) $('plDate').value = todayISO();
   $('plEmail').value = localStorage.getItem(PL_EMAIL_KEY) || '';
   $('plScopeRow').style.display = isSupervisor(me) ? 'block' : 'none';
+  plRenderNum();
   plRenderList();
+}
+
+// Блок нумерации путевых листов: показывает следующий номер своего водителя,
+// а если начальный номер ещё не задан — предлагает его ввести
+function plRenderNum() {
+  const el = $('plNumBlock');
+  if (!el || !me) return;
+  const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
+  const cur = found && found.plNum ? parseInt(found.plNum, 10) : NaN;
+  if (!isNaN(cur)) {
+    el.innerHTML = `<div class="ref-item"><b>№ путевого листа:</b> следующий — ${cur}<br>` +
+      `<span class="empty">Присваивается автоматически при первом формировании PDF.</span></div>`;
+  } else {
+    el.innerHTML = `
+      <label>Номер первого путевого листа (задаётся один раз)</label>
+      <input id="plNumInput" inputmode="numeric" placeholder="например, 1">
+      <button class="small" style="background:#2f9e6e" onclick="plNumSave()">Сохранить начальный №</button>`;
+  }
+}
+
+async function plNumSave() {
+  if (!me) { msg('Сначала войди'); return; }
+  const num = parseInt(String($('plNumInput').value || '').replace(/\D/g, ''), 10);
+  if (isNaN(num) || num < 1) { msg('Номер — целое число от 1'); return; }
+  msg('Сохраняю номер…');
+  const r = await sendOrQueue([{ id: 'pln-' + uid(), type: 'plnumset', fio: me.fio, num: num }]);
+  if (r.sent) {
+    const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
+    if (found) found.plNum = String(num);
+    msg('Начальный № сохранён: первый путевой лист получит № ' + num + ', дальше — по возрастанию.');
+  } else {
+    msg('Нет сети: номер сохранён в телефоне и применится при синхронизации.\nФормирование PDF станет доступно после синхронизации.');
+  }
+  plRenderNum();
 }
 
 function plRenderList() {
