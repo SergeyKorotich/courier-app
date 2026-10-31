@@ -1153,37 +1153,47 @@ function openPl() {
   plRenderList();
 }
 
+// Полный номер: префикс + 6 цифр с ведущими нулями
+function plFmtNum(prefix, n) {
+  return prefix + '-' + String(n).padStart(6, '0');
+}
+
 // Блок нумерации путевых листов: показывает следующий номер своего водителя,
-// а если начальный номер ещё не задан — предлагает его ввести
+// а если префикс или начальный номер ещё не заданы — предлагает их ввести
 function plRenderNum() {
   const el = $('plNumBlock');
   if (!el || !me) return;
   const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
   const cur = found && found.plNum ? parseInt(found.plNum, 10) : NaN;
-  if (!isNaN(cur)) {
-    el.innerHTML = `<div class="ref-item"><b>№ путевого листа:</b> следующий — ${cur}<br>` +
+  const prefix = found && found.plPrefix ? found.plPrefix : '';
+  if (prefix && !isNaN(cur)) {
+    el.innerHTML = `<div class="ref-item"><b>№ путевого листа:</b> следующий — ${esc(plFmtNum(prefix, cur))}<br>` +
       `<span class="empty">Присваивается автоматически при первом формировании PDF.</span></div>`;
   } else {
+    // Префикс обязателен: без него номер не сформируется
     el.innerHTML = `
+      <label>Префикс номера (уникален для водителя, например АТС10)</label>
+      <input id="plPrefixInput" placeholder="АТС10" value="${esc(prefix)}">
       <label>Номер первого путевого листа (задаётся один раз)</label>
-      <input id="plNumInput" inputmode="numeric" placeholder="например, 1">
-      <button class="small" style="background:#2f9e6e" onclick="plNumSave()">Сохранить начальный №</button>`;
+      <input id="plNumInput" inputmode="numeric" placeholder="например, 870" value="${isNaN(cur) ? '' : cur}">
+      <button class="small" style="background:#2f9e6e" onclick="plNumSave()">Сохранить префикс и №</button>`;
   }
 }
 
 async function plNumSave() {
   if (!me) { msg('Сначала войди'); return; }
+  const prefix = String($('plPrefixInput').value || '').trim().toUpperCase();
   const num = parseInt(String($('plNumInput').value || '').replace(/\D/g, ''), 10);
+  if (!prefix) { msg('Укажи префикс (например, АТС10)'); return; }
   if (isNaN(num) || num < 1) { msg('Номер — целое число от 1'); return; }
   msg('Сохраняю номер…');
-  const r = await sendOrQueue([{ id: 'pln-' + uid(), type: 'plnumset', fio: me.fio, num: num }]);
-  if (r.sent) {
-    const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
-    if (found) found.plNum = String(num);
-    msg('Начальный № сохранён: первый путевой лист получит № ' + num + ', дальше — по возрастанию.');
-  } else {
-    msg('Нет сети: номер сохранён в телефоне и применится при синхронизации.\nФормирование PDF станет доступно после синхронизации.');
-  }
+  const r = await sendOrQueue([{ id: 'pln-' + uid(), type: 'plnumset', fio: me.fio, prefix: prefix, num: num }]);
+  // Локально обновляем сразу: правка применится и офлайн-очередью
+  const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
+  if (found) { found.plPrefix = prefix; found.plNum = String(num); }
+  msg(r.sent
+    ? 'Сохранено: первый путевой лист получит № ' + plFmtNum(prefix, num) + ', дальше — по возрастанию.'
+    : 'Нет сети: сохранено в телефоне и применится при синхронизации.\nФормирование PDF станет доступно после синхронизации.');
   plRenderNum();
 }
 
