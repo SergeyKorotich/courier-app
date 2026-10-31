@@ -18,7 +18,8 @@ let interPoints = [];
 let medPoints = []; // «Куда везём врача» — лист MedPoints
 let docNames = [];
 let drivers = [];
-let carEditMode = null;
+let carEditMode = null;  // 'new' | 'edit'
+let carEditRow = null;   // номер строки авто на листе Drivers (или null)
 let shiftsData = [];
 let reportDetail = null;
 let doctorsContact = [];
@@ -340,10 +341,8 @@ function renderCars() {
     ? cars.map(c => `<option value="${esc(carLabel(c))}">${esc(carLabel(c))}</option>`).join('')
     : '<option value="">— нет автомобилей —</option>';
   $('carSel').innerHTML += '<option value="__new">➕ Добавить автомобиль…</option>';
-  $('carPanel').style.display = 'none';
   updateCarButtons();
   $('meName').textContent = me.fio;
-  $('editDriverBtn').style.display = 'block';
   // Восстанавливаем выбор: авто открытой смены, иначе последнее использованное
   if (shift && shift.carLabel) selectCarByLabel(shift.carLabel);
   else selectCarByLabel(localStorage.getItem('lastCar'));
@@ -355,15 +354,16 @@ function currentCarLabel() {
 }
 
 function updateCarButtons() {
+  if (!$('editCarBtn')) return; // правка авто перенесена в «Настройки»
   const has = !!currentCarLabel() && (me.cars || []).length > 0;
   $('editCarBtn').style.display = has ? 'block' : 'none';
 }
 
 function selectCarByLabel(label) {
-  if (!label) return;
+  if (!label) return false;
   const opt = Array.from($('carSel').options).find(o => o.value === label);
-  if (opt) $('carSel').value = label;
-  updateCarButtons();
+  if (opt) { $('carSel').value = label; updateCarButtons(); return true; }
+  return false;
 }
 
 // Подсказки «Откуда/Куда» переключаются по типу маршрута:
@@ -390,28 +390,42 @@ function onSegTypeChange() {
 }
 
 function onCarChange() {
-  if ($('carSel').value === '__new') openCarPanel('new');
-  else {
-    $('carPanel').style.display = 'none';
-    updateCarButtons();
-    if (me) localStorage.setItem('lastCar', $('carSel').value);
+  if ($('carSel').value === '__new') {
+    // Добавление/правка авто — в «Настройках»; выбор сбрасываем на прежний
+    const restored = selectCarByLabel(localStorage.getItem('lastCar'));
+    if (!restored) {
+      const opt = Array.from($('carSel').options).find(o => o.value && o.value !== '__new');
+      if (opt) { $('carSel').value = opt.value; updateCarButtons(); }
+    }
+    openSettings();
+    openCarPanel('new');
+    return;
   }
+  updateCarButtons();
+  if (me) localStorage.setItem('lastCar', $('carSel').value);
 }
 
-function openCarPanel(mode) {
+// mode: 'new' — новый автомобиль; 'edit' + row — правка известного серверу авто
+function openCarPanel(mode, row) {
   if (!me) { msg('Сначала войди'); return; }
   carEditMode = mode;
+  let c = null;
   if (mode === 'edit') {
-    const c = me.cars.find(x => carLabel(x) === $('carSel').value) || me.cars[0];
+    c = row ? me.cars.find(x => x.row === row)
+            : me.cars.find(x => x.row) || me.cars[0];
     if (!c) { msg('Нет автомобиля для правки'); return; }
+    if (!c.row) { msg('Автомобиль ещё не синхронизирован — правка будет доступна после синхронизации'); return; }
     $('carNameInput').value = c.name || '';
     $('carPlateInput').value = c.plate || '';
   } else {
     $('carNameInput').value = '';
     $('carPlateInput').value = '';
   }
-  $('carPanel').style.display = 'block';
-  $('driverEditPanel').style.display = 'none';
+  carEditRow = c ? (c.row || null) : null;
+  const btn = $('setCarBtn');
+  if (btn) btn.textContent = mode === 'edit' ? 'Сохранить автомобиль' : 'Добавить автомобиль';
+  const panel = $('carPanel');
+  if (panel) panel.style.display = 'block';
 }
 
 async function saveCar() {
@@ -428,16 +442,15 @@ async function saveCar() {
     return;
   }
   let r;
-  const c = carEditMode === 'edit'
-    ? (me.cars.find(x => carLabel(x) === $('carSel').value) || me.cars[0])
+  const editing = (carEditMode === 'edit' && carEditRow != null)
+    ? me.cars.find(x => x.row === carEditRow)
     : null;
-  if (carEditMode === 'edit' && c && c.row) {
+  if (editing && editing.row) {
     // Правка известна серверу по номеру строки
-    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'driveredit', row: c.row, fio: me.fio, car: car, plate: plate }]);
-    c.name = car; c.plate = plate;
+    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'driveredit', row: editing.row, fio: me.fio, car: car, plate: plate }]);
+    editing.name = car; editing.plate = plate;
   } else {
-    // Автомобиль добавлен офлайн (row отсутствует) — отправляем как новый,
-    // иначе сервер отклонит «driveredit» без строки и правка потеряется
+    // Новый автомобиль
     r = await sendOrQueue([{ id: 'car-' + uid(), type: 'driver', fio: me.fio, car: car, plate: plate }]);
     me.cars.push({ name: car, plate: plate, row: null });
   }
@@ -448,35 +461,93 @@ async function saveCar() {
     saveState();
   }
   localStorage.setItem('lastCar', label);
-  renderCars();
-  selectCarByLabel(label);
   $('carPanel').style.display = 'none';
+  renderCars();
+  renderSettingsCars();
+  selectCarByLabel(label);
   msg(r.sent ? 'Автомобиль сохранён: ' + label
              : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
 }
 
-function openDriverEdit() {
+// ================= НАСТРОЙКИ =================
+function openSettings() {
   if (!me) { msg('Сначала войди'); return; }
-  $('editDriverFio').value = me.fio;
-  $('driverEditPanel').style.display = 'block';
-  $('carPanel').style.display = 'none';
+  showScreen('settingsScreen');
+  renderSettings();
 }
 
-async function saveDriverEdit() {
+function renderSettings() {
+  if (!me) return;
+  const found = drivers.find(x => normFio(x.fio) === normFio(me.fio)) || {};
+  $('setFio').value = me.fio;
+  $('setSnils').value = found.snils || '';
+  $('setVu').value = found.vu || '';
+  $('setKlass').value = found.klass || '';
+  $('setTel').value = found.phone || '';
+  // Роль назначает только старший
+  $('setRoleBlock').style.display = isSupervisor(me) ? 'block' : 'none';
+  if (isSupervisor(me)) $('setRole').value = found.role || '';
+  renderSettingsCars();
+  $('setPlBlock').innerHTML = plNumBlockHtml('set');
+  const panel = $('carPanel');
+  if (panel) panel.style.display = 'none';
+  const btn = $('setCarBtn');
+  if (btn) btn.textContent = 'Добавить автомобиль';
+  carEditMode = null;
+  carEditRow = null;
+}
+
+function renderSettingsCars() {
+  const list = $('setCarsList');
+  if (!list || !me) return;
+  const cars = (me.cars || []).slice().sort((a, b) => ruCmp(carLabel(a), carLabel(b)));
+  list.innerHTML = cars.length
+    ? cars.map(c => `
+      <div class="ref-item">
+        <b>${esc(carLabel(c))}</b>${c.row ? '' : ' <span class="empty">(ещё не синхронизирован)</span>'}
+        <a class="edit" href="#" onclick="openCarPanel('edit', ${c.row || 'null'});return false">✎ править</a>
+      </div>`).join('')
+    : '<div class="ref-item empty">Автомобилей нет — добавьте первый ниже.</div>';
+}
+
+// Профиль: ФИО (через driverrename — переименует все строки), СНИЛС, ВУ,
+// класс, телефон, роль (только для старшего). Префикс/номер ПЛ — отдельная
+// кнопка (plNumSave) со своей проверкой уникальности префикса на сервере.
+async function saveSettings() {
   if (!me) { msg('Сначала войди'); return; }
-  const fio = $('editDriverFio').value.trim().replace(/\s+/g, ' ');
-  if (!fio) { msg('Укажи новое ФИО'); return; }
-  if (normFio(fio) === normFio(me.fio)) { msg('ФИО не изменилось'); return; }
-  msg('Сохраняю ФИО…');
-  const r = await sendOrQueue([{ id: 'drvr-' + uid(), type: 'driverrename', fioOld: me.fio, fio: fio }]);
-  me.fio = fio;
+  const fio = $('setFio').value.trim().replace(/\s+/g, ' ');
+  if (!fio) { msg('Укажи ФИО'); return; }
+  const profile = {
+    id: 'dpr-' + uid(), type: 'driverprofile', fioOld: me.fio,
+    snils: $('setSnils').value.trim(),
+    vu: $('setVu').value.trim(),
+    klass: $('setKlass').value.trim(),
+    tel: $('setTel').value.trim()
+  };
+  if (isSupervisor(me)) profile.role = $('setRole').value.trim();
+  const recs = [profile];
+  const renamed = normFio(fio) !== normFio(me.fio);
+  if (renamed) {
+    recs.push({ id: 'drvr-' + uid(), type: 'driverrename', fioOld: me.fio, fio: fio });
+  }
+  msg('Сохраняю…');
+  const r = await sendOrQueue(recs);
+  // Локально применяем сразу: профиль и переименование видны без сети
+  const dr = drivers.find(x => normFio(x.fio) === normFio(me.fio));
+  if (dr) {
+    dr.snils = profile.snils; dr.vu = profile.vu;
+    dr.klass = profile.klass; dr.phone = profile.tel;
+    if (isSupervisor(me)) dr.role = profile.role || '';
+    if (renamed) dr.fio = fio;
+  }
   const auth = getAuth();
   if (auth) setAuth(fio, auth.pin);
-  $('driverEditPanel').style.display = 'none';
+  me.fio = fio;
   renderCars();
   renderDashboard();
-  msg(r.sent ? 'ФИО обновлено: ' + fio
-             : 'Нет сети: правка записана в очередь и применится при синхронизации');
+  renderSettings();
+  msg(r.sent ? 'Данные сохранены на сервере'
+             : 'Нет сети: сохранено в телефоне, уйдёт в таблицу при синхронизации');
 }
 
 // ================= ПОДСЧЁТЫ =================
@@ -562,7 +633,7 @@ function rememberRef(list, refType, name) {
 }
 
 // ================= ЭКРАНЫ =================
-const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'reportScreen', 'refsScreen', 'plScreen'];
+const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen'];
 function showScreen(name) {
   SCREENS.forEach(id => { $(id).style.display = 'none'; });
   $(name).style.display = 'block';
@@ -917,6 +988,7 @@ async function saveClinicForm() {
   msg(r.sent ? 'Клиника сохранена на сервере'
              : 'Нет сети: клиника сохранена в телефоне и уйдёт в таблицу при синхронизации');
 }
+
 // ================= СМЕНА =================
 function startShift() {
   const dateStr = $('shiftDate').value;
@@ -1148,7 +1220,7 @@ function openPl() {
   if (!$('plDate').value) $('plDate').value = todayISO();
   $('plEmail').value = localStorage.getItem(PL_EMAIL_KEY) || '';
   $('plScopeRow').style.display = isSupervisor(me) ? 'block' : 'none';
-  plRenderNum();
+  plRenderNumInto('plNumBlock');
   plRenderList();
 }
 
@@ -1157,10 +1229,12 @@ function plFmtNum(prefix, n) {
   return prefix + '-' + String(n).padStart(6, '0');
 }
 
-// Блок нумерации путевых листов: показывает следующий номер своего водителя,
-// а если префикс или начальный номер ещё не заданы — предлагает их ввести
-function plRenderNum() {
-  const el = $('plNumBlock');
+// Блок нумерации путевых листов. Рендерится в двух местах:
+// экран «Путевые листы» (plNumBlock) и «Настройки» (setPlBlock).
+// ctx отличает input-идентификаторы, чтобы блоки не мешали друг другу.
+function plRenderNumInto(elId, ctx) {
+  ctx = ctx || (elId === 'setPlBlock' ? 'set' : 'pl');
+  const el = $(elId);
   if (!el || !me) return;
   const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
   const cur = found && found.plNum ? parseInt(found.plNum, 10) : NaN;
@@ -1171,18 +1245,20 @@ function plRenderNum() {
   } else {
     // Префикс обязателен: без него номер не сформируется
     el.innerHTML = `
-      <label>Префикс номера (уникален для водителя, например АТС10)</label>
-      <input id="plPrefixInput" placeholder="АТС10" value="${esc(prefix)}">
+      <label>Префикс номера (например АТС10; у каждого водителя свой)</label>
+      <input id="plPrefixInput_${ctx}" placeholder="АТС10" value="${esc(prefix)}">
       <label>Номер первого путевого листа (задаётся один раз)</label>
-      <input id="plNumInput" inputmode="numeric" placeholder="например, 870" value="${isNaN(cur) ? '' : cur}">
-      <button class="small" style="background:#2f9e6e" onclick="plNumSave()">Сохранить префикс и №</button>`;
+      <input id="plNumInput_${ctx}" inputmode="numeric" placeholder="например, 870" value="${isNaN(cur) ? '' : cur}">
+      <button class="small" style="background:#2f9e6e" onclick="plNumSave('${ctx}')">Сохранить префикс и №</button>`;
   }
 }
 
-async function plNumSave() {
+async function plNumSave(ctx) {
   if (!me) { msg('Сначала войди'); return; }
-  const prefix = String($('plPrefixInput').value || '').trim().toUpperCase();
-  const num = parseInt(String($('plNumInput').value || '').replace(/\D/g, ''), 10);
+  const pIn = $('plPrefixInput_' + ctx), nIn = $('plNumInput_' + ctx);
+  if (!pIn || !nIn) return;
+  const prefix = String(pIn.value || '').trim().toUpperCase();
+  const num = parseInt(String(nIn.value || '').replace(/\D/g, ''), 10);
   if (!prefix) { msg('Укажи префикс (например, АТС10)'); return; }
   if (isNaN(num) || num < 1) { msg('Номер — целое число от 1'); return; }
   msg('Сохраняю номер…');
@@ -1193,7 +1269,8 @@ async function plNumSave() {
   msg(r.sent
     ? 'Сохранено: первый путевой лист получит № ' + plFmtNum(prefix, num) + ', дальше — по возрастанию.'
     : 'Нет сети: сохранено в телефоне и применится при синхронизации.\nФормирование PDF станет доступно после синхронизации.');
-  plRenderNum();
+  plRenderNumInto('plNumBlock', 'pl');
+  plRenderNumInto('setPlBlock', 'set');
 }
 
 function plRenderList() {

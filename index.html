@@ -157,16 +157,8 @@
       <button onclick="openPl()">🧾 Путевые листы</button>
       <button id="supBtn" style="display:none" onclick="openReport()">📊 Статистика всех водителей</button>
       <button class="secondary" onclick="openRefs()">🗂 Справочник врачей и клиник</button>
-      <button id="editDriverBtn" style="display:none" class="secondary" onclick="openDriverEdit()">✎ Изменить ФИО</button>
+      <button class="secondary" onclick="openSettings()">⚙ Настройки</button>
       <button class="danger" onclick="doLogout()">Выйти</button>
-    </div>
-
-    <!-- Правка ФИО -->
-    <div class="card" id="driverEditPanel" style="display:none">
-      <h3>Изменить ФИО</h3>
-      <input id="editDriverFio" placeholder="Новое ФИО">
-      <button onclick="saveDriverEdit()">Сохранить</button>
-      <button class="secondary" onclick="$('driverEditPanel').style.display='none'">Отмена</button>
     </div>
   </div>
 
@@ -187,17 +179,7 @@
       <input id="odoStart" inputmode="decimal" placeholder="например, 84125">
       <label>Автомобиль</label>
       <select id="carSel" onchange="onCarChange()"></select>
-      <button id="editCarBtn" style="display:none" class="secondary small" onclick="openCarPanel('edit')">✎ Правка авто</button>
-
-      <!-- Добавление / правка автомобиля -->
-      <div id="carPanel" style="display:none">
-        <label>Марка/модель</label>
-        <input id="carNameInput" placeholder="Granta седан">
-        <label>Госномер</label>
-        <input id="carPlateInput" placeholder="В722ВУ18">
-        <button onclick="saveCar()">Сохранить автомобиль</button>
-        <button class="secondary" onclick="$('carPanel').style.display='none'">Отмена</button>
-      </div>
+      <div class="muted" style="margin-top:6px">Добавить или исправить автомобиль — в ⚙ Настройках</div>
 
       <label>Тип маршрута (по умолчанию для смены)</label>
       <select id="segType" onchange="onSegTypeChange()">
@@ -252,6 +234,50 @@
         <input id="refuel" inputmode="decimal" placeholder="например, 30">
         <button class="danger" onclick="finishShift()">Завершить смену</button>
       </div>
+    </div>
+  </div>
+
+  <!-- НАСТРОЙКИ -->
+  <div id="settingsScreen" style="display:none">
+    <div class="topbar">
+      <button class="secondary" onclick="goMenu()">← Меню</button>
+    </div>
+
+    <div class="card">
+      <h2>⚙ Настройки</h2>
+
+      <h3>Данные водителя</h3>
+      <label>ФИО</label>
+      <input id="setFio" placeholder="Иванов Иван Иванович">
+      <label>СНИЛС</label>
+      <input id="setSnils" placeholder="000-000-000 00">
+      <label>Водительское удостоверение (ВУ)</label>
+      <input id="setVu">
+      <label>Класс</label>
+      <input id="setKlass" placeholder="B, C…">
+      <label>Телефон (необязательно)</label>
+      <input id="setTel" inputmode="tel">
+      <div id="setRoleBlock" style="display:none">
+        <label>Роль (назначается старшим)</label>
+        <input id="setRole" placeholder="пусто — обычный; «старший» — статистика всех">
+      </div>
+
+      <h3 style="margin-top:16px">Автомобили</h3>
+      <div id="setCarsList"></div>
+      <div id="carPanel" style="display:none">
+        <label>Марка/модель</label>
+        <input id="carNameInput" placeholder="Granta седан">
+        <label>Госномер</label>
+        <input id="carPlateInput" placeholder="В722ВУ18">
+        <button id="setCarBtn" onclick="saveCar()">Добавить автомобиль</button>
+        <button class="secondary" onclick="$('carPanel').style.display='none'">Отмена</button>
+      </div>
+      <button class="small" onclick="openCarPanel('new')">➕ Добавить автомобиль</button>
+
+      <h3 style="margin-top:16px">Путевые листы</h3>
+      <div id="setPlBlock"></div>
+
+      <button onclick="saveSettings()">Сохранить данные водителя</button>
     </div>
   </div>
 
