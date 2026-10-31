@@ -108,6 +108,7 @@ body,.card,input,select,textarea,button,table,th,td,.ref-item,.dash-row,#msg{tra
   </div>
   <div class="card">
     <button class="menu" style="background:#2f6fed" onclick="openWork()">📋 Запись смены</button>
+    <button class="menu" style="background:#5a4fcf" onclick="openPl()">🧾 Путевые листы</button>
     <button class="menu" style="background:#2f9e6e" onclick="openRefs()">📖 Справочник: врачи и клиники</button>
     <button class="small" onclick="doLogout()">Выйти</button>
   </div>
@@ -250,6 +251,34 @@ body,.card,input,select,textarea,button,table,th,td,.ref-item,.dash-row,#msg{tra
     <div id="refsCls"></div>
   </div>
   <button class="small" onclick="goMenu()">← На главный экран</button>
+</div>
+
+<!-- ПУТЕВЫЕ ЛИСТЫ -->
+<div id="plScreen" style="display:none">
+  <div class="card">
+    <h2>🧾 Путевые листы</h2>
+    <label>Период</label>
+    <select id="plPeriod" onchange="plRenderList()">
+      <option value="day">День</option>
+      <option value="week">Неделя</option>
+      <option value="month">Месяц</option>
+    </select>
+    <label>Дата (любая внутри периода)</label>
+    <input id="plDate" type="date" onchange="plRenderList()">
+    <div id="plScopeRow" style="display:none">
+      <label>Данные</label>
+      <select id="plScope" onchange="plRenderList()">
+        <option value="mine">Только мои смены</option>
+        <option value="all">Все водители</option>
+      </select>
+    </div>
+    <label>Email для отправки</label>
+    <input id="plEmail" inputmode="email" placeholder="buh@example.ru" onchange="plRenderList()">
+    <div id="plList"></div>
+    <button style="background:#2f9e6e" onclick="plDownloadAll()">⬇ Скачать все PDF</button>
+    <button class="small" onclick="plEmailAll()">✉ Отправить все на email</button>
+    <button class="small" onclick="goMenu()">← На главный экран</button>
+  </div>
 </div>
 
 <script src="app.js"></script>

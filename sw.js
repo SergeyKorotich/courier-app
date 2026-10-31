@@ -1,23 +1,22 @@
-// Кэшируем только статику этого сайта (GET same-origin).
-// POST к API всегда идёт в сеть — кэш туда не лезет.
-const CACHE = 'kuryer-v15';
+// Увеличиваем версию только если меняем структуру самого SW (редко)
+const CACHE = 'kuryer-v18'; 
+
+// ВАЖНО: app.js здесь НЕТ! Он не кэшируется, чтобы всегда быть свежим.
 const ASSETS = [
   './',
   './index.html',
-  './app.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
 ];
-// Эти файлы меняются при каждом релизе — отдаём из сети, кэш как запасной вариант
-const VOLATILE = [/\/index\.html$/, /\/app\.js$/, /\/$/];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  // Каждый файл кэшируем отдельно: один битый URL не срывает весь install
-  e.waitUntil(caches.open(CACHE).then(c =>
-    Promise.all(ASSETS.map(a => c.add(a).catch(() => {})))
-  ));
+  e.waitUntil(
+    caches.open(CACHE).then(c =>
+      Promise.all(ASSETS.map(a => c.add(a).catch(() => {})))
+    )
+  );
 });
 
 self.addEventListener('activate', e => {
@@ -29,25 +28,33 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // POST запросы (синхронизация данных) всегда идут в сеть, мимо кэша
   if (e.request.method !== 'GET') return;
+
   let url;
   try { url = new URL(e.request.url); } catch (err) { return; }
-  if (url.origin !== self.location.origin) return; // API — мимо кэша
+  
+  // Если запрос к чужому домену (API Google) — мимо кэша
+  if (url.origin !== self.location.origin) return;
 
   const path = url.pathname;
-  const volatile = VOLATILE.some(re => re.test(path));
 
+  // Логика кэширования
   e.respondWith(
-    (volatile
-      ? // network-first: свежая версия важнее мгновенной загрузки
-        fetch(e.request).then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, copy));
-          return res;
-        }).catch(() => caches.match(e.request)
-            .then(hit => hit || caches.match('./index.html')))
-      : // cache-first: иконка, manifest и прочая неизменяемая статика
-        caches.match(e.request).then(hit => hit || fetch(e.request))
+    // Если это app.js — всегда сеть (свежесть важнее скорости)
+    (path.endsWith('app.js') 
+      ? fetch(e.request).catch(() => {
+          // Если сети нет и это app.js — показываем ошибку или заглушку, 
+          // но НЕ берем старый скрипт, чтобы не было глюков логики
+          return caches.match('./index.html').then(res => {
+             if(res) return res;
+             throw new Error('No network and no cached app.js');
+          });
+        })
+      : // Для всего остального (html, картинки) — Cache First
+        caches.match(e.request).then(hit => 
+          hit || fetch(e.request).catch(() => caches.match('./index.html'))
+        )
     )
   );
 });

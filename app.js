@@ -562,7 +562,7 @@ function rememberRef(list, refType, name) {
 }
 
 // ================= ЭКРАНЫ =================
-const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'reportScreen', 'refsScreen'];
+const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'reportScreen', 'refsScreen', 'plScreen'];
 function showScreen(name) {
   SCREENS.forEach(id => { $(id).style.display = 'none'; });
   $(name).style.display = 'block';
@@ -580,7 +580,7 @@ function showWork() {
   $('docCard').style.display = 'block';
   $('finishCard').style.display = 'block';
   // Смена авто разрешена, пока не записано ни одного отрезка:
-  // после первого одометр начала смены привязан к конкретному авто
+  // после первого одометр начала смены привязан к конкретной машине
   $('carSel').disabled = !!(shift && segments.length > 0);
   renderSegPoints();
   renderDocPlaceList();
@@ -1052,6 +1052,7 @@ async function finishShift() {
   $('timeEnd').value = '';
 
   shiftsData.push({
+    id: batch[0].id, // нужен для скачивания путевого листа сразу после сдачи смены
     date: batch[0].date, driverId: batch[0].driverId,
     carLabel: batch[0].carLabel, timeStart: batch[0].timeStart, timeEnd: tEnd,
     totalKm: String(totalKm), cityKm: String(cityKm), highwayKm: String(highwayKm),
@@ -1102,6 +1103,121 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
+}
+
+// ================= ПУТЕВЫЕ ЛИСТЫ =================
+const PL_EMAIL_KEY = 'plEmail';
+
+function plIso(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function ruFmtShort(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  return m ? m[3] + '.' + m[2] + '.' + m[1] : String(iso || '');
+}
+
+// Границы периода: неделя с понедельника, месяц — календарный
+function plPeriodRange(dateStr, kind) {
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return null;
+  if (kind === 'week') {
+    const off = (d.getDay() + 6) % 7;
+    const f = new Date(d); f.setDate(d.getDate() - off);
+    const t = new Date(f); t.setDate(f.getDate() + 6);
+    return { from: plIso(f), to: plIso(t) };
+  }
+  if (kind === 'month') {
+    const f = new Date(d.getFullYear(), d.getMonth(), 1);
+    const t = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return { from: plIso(f), to: plIso(t) };
+  }
+  return { from: dateStr, to: dateStr };
+}
+
+function plShifts() {
+  const r = plPeriodRange($('plDate').value || todayISO(), $('plPeriod').value);
+  if (!r) return [];
+  const scope = $('plScope').value;
+  return shiftsData
+    .filter(s => String(s.date || '') >= r.from && String(s.date || '') <= r.to)
+    .filter(s => scope === 'all' || normFio(s.driverId) === normFio(me.fio))
+    .sort((a, b) => ruCmp(a.date, b.date) || ruCmp(a.timeStart, b.timeStart));
+}
+
+function openPl() {
+  showScreen('plScreen');
+  if (!$('plDate').value) $('plDate').value = todayISO();
+  $('plEmail').value = localStorage.getItem(PL_EMAIL_KEY) || '';
+  $('plScopeRow').style.display = isSupervisor(me) ? 'block' : 'none';
+  plRenderList();
+}
+
+function plRenderList() {
+  localStorage.setItem(PL_EMAIL_KEY, $('plEmail').value.trim());
+  const r = plPeriodRange($('plDate').value || todayISO(), $('plPeriod').value);
+  if (!r) { $('plList').innerHTML = ''; return; }
+  const rows = plShifts();
+  $('plList').innerHTML = '<h3>Период: ' + ruFmtShort(r.from) + ' — ' + ruFmtShort(r.to) + '</h3>' +
+    (rows.length ? rows.map(s => `
+      <div class="ref-item">
+        <b>${esc(ruFmtShort(s.date))}</b> — ${esc(s.carLabel || '')}${$('plScope').value === 'all' && s.driverId ? ' — ' + esc(s.driverId) : ''}<br>
+        ${esc(s.timeStart || '')}–${esc(s.timeEnd || '')}, км: ${esc(s.totalKm || 0)}
+        <a class="lnk" href="#" onclick="plDownloadOne('${escJsName(s.id)}');return false">⬇ PDF</a>
+      </div>`).join('')
+    : '<div class="ref-item empty">Смен за период нет.</div>');
+}
+
+function plSavePdf(b64, name) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function plDownloadOne(id) {
+  if (!id) { msg('У этой смены нет id — открой приложение при сети, чтобы обновить данные'); return; }
+  msg('Готовлю путевой лист…');
+  try {
+    const out = await (await fetch(API_URL + '?page=waybill&id=' + encodeURIComponent(id))).json();
+    if (!out.ok) { msg('Ошибка: ' + (out.error || 'сервер')); return; }
+    plSavePdf(out.base64, out.filename || ('Путевой лист ' + id + '.pdf'));
+    msg('PDF скачан');
+  } catch (e) { msg('Нет сети: попробуй позже'); }
+}
+
+async function plDownloadAll() {
+  const rows = plShifts().filter(s => s.id);
+  if (!rows.length) { msg('Смен за период нет'); return; }
+  let done = 0; const failed = [];
+  for (let i = 0; i < rows.length; i++) {
+    msg(`Путевой лист ${i + 1} из ${rows.length}: ${rows[i].driverId || me.fio}…`);
+    try {
+      const out = await (await fetch(API_URL + '?page=waybill&id=' + encodeURIComponent(rows[i].id))).json();
+      if (out.ok) { plSavePdf(out.base64, out.filename || ('Путевой лист ' + rows[i].id + '.pdf')); done++; }
+      else failed.push((rows[i].driverId || '') + ' ' + rows[i].date + ': ' + (out.error || 'ошибка'));
+    } catch (e) { failed.push((rows[i].driverId || '') + ' ' + rows[i].date + ': нет сети'); }
+  }
+  msg(failed.length
+    ? 'Готово: ' + done + ' из ' + rows.length + '. Ошибки: ' + failed.join('; ')
+    : 'Готово: скачано ' + done + ' PDF. Если браузер спросил про «несколько файлов» — разреши.');
+}
+
+async function plEmailAll() {
+  const to = $('plEmail').value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { msg('Укажи корректный email'); return; }
+  const ids = plShifts().map(s => s.id).filter(Boolean);
+  if (!ids.length) { msg('Смен за период нет'); return; }
+  msg('Формирую и отправляю…');
+  try {
+    const out = await (await fetch(API_URL + '?page=waybill&ids=' + ids.map(encodeURIComponent).join(',') + '&email=' + encodeURIComponent(to))).json();
+    msg(out.ok
+      ? 'Отправлено путевых листов: ' + out.sent + (out.failed && out.failed.length ? '; ошибки: ' + out.failed.join('; ') : '')
+      : 'Ошибка: ' + (out.error || 'сервер'));
+  } catch (e) { msg('Нет сети: попробуй позже'); }
 }
 
 // ================= ЗАПУСК =================
