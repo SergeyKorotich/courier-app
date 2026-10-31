@@ -1251,6 +1251,22 @@ async function plDownloadAll() {
     : 'Готово: скачано ' + done + ' PDF. Если браузер спросил про «несколько файлов» — разреши.');
 }
 
+// Слитый PDF: все путевые листы периода — один файл
+async function plDownloadMerged() {
+  const rows = plShifts().filter(s => s.id);
+  if (!rows.length) { msg('Смен за период нет'); return; }
+  msg('Собираю один PDF из ' + rows.length + ' смен…');
+  try {
+    const ids = rows.map(s => s.id).map(encodeURIComponent).join(',');
+    const out = await (await fetch(API_URL + '?page=waybill&ids=' + ids + '&merge=1')).json();
+    if (!out.ok) { msg('Ошибка: ' + (out.error || 'сервер')); return; }
+    plSavePdf(out.base64, out.filename || 'Путевые листы.pdf');
+    msg(out.failed && out.failed.length
+      ? 'Готово: в файле ' + out.sent + ' ПЛ. Пропущены: ' + out.failed.join('; ')
+      : 'Готово: один PDF с ' + out.sent + ' путевыми листами.');
+  } catch (e) { msg('Нет сети: попробуй позже'); }
+}
+
 async function plEmailAll() {
   const to = $('plEmail').value.trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { msg('Укажи корректный email'); return; }
