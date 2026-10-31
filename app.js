@@ -32,6 +32,7 @@ const REF_KEY = 'refCache';
 const STATE_KEY = 'appState_v1';
 const SHIFTS_KEY = 'shiftsCache';
 const AUTH_KEY = 'authCreds';
+const LAST_SEG_KEY = 'lastSegType'; // последний выбранный тип маршрута
 const MAX_TRIES = 3; // попыток на пакет до пропуска
 const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
 
@@ -383,6 +384,7 @@ function renderDocNames() {
 }
 
 function onSegTypeChange() {
+  localStorage.setItem(LAST_SEG_KEY, $('segType').value);
   renderSegPoints();
   saveState();
 }
@@ -591,6 +593,7 @@ function showStart() {
   $('docCard').style.display = 'none';
   $('finishCard').style.display = 'none';
   $('carSel').disabled = false;
+  if (!$('segType').value) $('segType').value = localStorage.getItem(LAST_SEG_KEY) === 'inter' ? 'inter' : 'city';
 }
 
 function openWork() {
@@ -936,7 +939,8 @@ function startShift() {
   };
   segments = [];
   doctorVisits = [];
-  $('segType').value = 'city';
+  // последний выбор типа маршрута переносится в новую смену
+  $('segType').value = localStorage.getItem(LAST_SEG_KEY) === 'inter' ? 'inter' : 'city';
   localStorage.setItem('lastCar', carLabelVal);
   saveState();
   showWork();
@@ -1067,6 +1071,8 @@ function restoreState() {
   segments = saved.segments || [];
   doctorVisits = saved.doctorVisits || [];
   $('segType').value = saved.segType === 'inter' ? 'inter' : 'city';
+  // тип восстановленной смены становится «последним выбранным»
+  localStorage.setItem(LAST_SEG_KEY, $('segType').value);
   if (segments.length) {
     const last = segments[segments.length - 1];
     $('segFrom').value = last.to;
@@ -1121,6 +1127,7 @@ async function init() {
   if (!restored) {
     const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
     if (!isNaN(saved) && saved > 0) $('odoStart').value = saved;
+    $('segType').value = localStorage.getItem(LAST_SEG_KEY) === 'inter' ? 'inter' : 'city';
     $('shiftDate').value = todayISO();
   }
 }
