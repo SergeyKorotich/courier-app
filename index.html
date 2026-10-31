@@ -1,288 +1,282 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Курьер — смены</title>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#2f6fed">
-<link rel="icon" href="icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Курьер">
-<link rel="apple-touch-icon" href="icon-192.png">
-<style>
-:root{
-  --bg:#f4f6f9; --card:#ffffff; --text:#1c1e21; --muted:#555; --faint:#888;
-  --border:#ccd3dd; --sep:#e8ecf3; --row-sep:#eef1f6;
-  --input-bg:#ffffff; --input-border:#ccd3dd;
-  --msg-bg:#eef3ff; --table-head:#f0f3f8; --tab-bg:#e6ebf3; --tab-text:#333;
-}
-html[data-theme="dark"]{
-  --bg:#121417; --card:#1d2025; --text:#e6e8eb; --muted:#9aa0a6; --faint:#8a8f96;
-  --border:#3a3f46; --sep:#2a2e34; --row-sep:#262a30;
-  --input-bg:#23262b; --input-border:#3a3f46;
-  --msg-bg:#1c2333; --table-head:#262a31; --tab-bg:#2a2e34; --tab-text:#e6e8eb;
-}
-body{font-family:system-ui,sans-serif;margin:0 auto;padding:12px;max-width:480px;background:var(--bg);color:var(--text)}
-.card{background:var(--card);border-radius:12px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-h2{font-size:16px;margin:4px 0}
-h3{font-size:14px;margin:10px 0 4px;color:var(--muted)}
-label{font-size:13px;color:var(--muted)}
-input,select,textarea{width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--text)}
-button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:0;border-radius:8px;background:#2f6fed;color:#fff}
-button.small{background:#8892a0;padding:8px;font-size:14px}
-button.menu{padding:16px;font-size:17px;margin:10px 0}
-.searchrow{display:flex;gap:8px;align-items:center}
-.searchrow .search-wrap{flex:1;position:relative;margin:4px 0}
-.search-wrap input{width:100%;padding-right:36px;margin:0}
-.clear-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:18px;line-height:1;padding:0;margin:0;display:none}
-.icon-btn{width:44px;height:44px;min-width:44px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:22px;line-height:1;padding:0;margin:0}
-.theme-btn{position:absolute;top:8px;right:8px;width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:17px;line-height:1;padding:0;margin:0}
-#msg{padding:8px;border-radius:8px;background:var(--msg-bg);margin:8px 0;font-size:14px;white-space:pre-wrap}
-table{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-th,td{padding:7px 5px;border-bottom:1px solid var(--sep);text-align:left;color:var(--text)}
-th{background:var(--table-head);font-size:12px;color:var(--muted)}
-td a{color:#2f6fed;text-decoration:none;font-weight:bold}
-.dash-row{display:flex;justify-content:space-between;font-size:15px;padding:4px 0;border-bottom:1px solid var(--row-sep)}
-.dash-row span:last-child{font-weight:bold}
-.logo{display:block;margin:6px auto 2px;width:96px;height:96px;object-fit:contain}
-.logo-sm{display:block;margin:0 auto;width:48px;height:48px;object-fit:contain}
-.ref-item{border-top:1px solid var(--sep);padding:8px 0;font-size:14px;line-height:1.45}
-.ref-item b{font-size:15px}
-.ref-item .lnk{color:#2f6fed;text-decoration:none;font-weight:bold;margin-right:10px}
-.ref-item .tel{color:#2f9e6e;text-decoration:none;font-weight:bold;margin-right:10px}
-.ref-item .edit{color:#8892a0;text-decoration:none;font-weight:bold}
-.ref-item .extra{white-space:pre-wrap;color:var(--muted);font-size:13px;margin-top:2px}
-.empty{color:var(--faint);font-size:14px}
-.authTabs{display:flex;gap:8px}
-.authTabs button{background:var(--tab-bg);color:var(--tab-text);width:auto;flex:1}
-.authTabs button.active{background:#2f6fed;color:#fff}
-body,.card,input,select,textarea,button,table,th,td,.ref-item,.dash-row,#msg{transition:background-color .2s ease,color .2s ease,border-color .2s ease}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Курьер — смены</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2f6fed">
+  <link rel="icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Курьер">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card-bg: #ffffff;
+      --text: #333;
+      --muted: #888;
+      --primary: #2f6fed;
+      --danger: #d9534f;
+      --success: #5cb85c;
+    }
+    [data-theme="dark"] {
+      --bg: #1a1a1a;
+      --card-bg: #2d2d2d;
+      --text: #e0e0e0;
+      --muted: #aaa;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 8px;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      margin-bottom: 12px;
+    }
+    h2 { margin-top: 0; }
+    label { display: block; margin-top: 8px; font-weight: 600; }
+    input, select, button {
+      width: 100%;
+      padding: 8px 12px;
+      margin-top: 4px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    button:hover { opacity: 0.9; }
+    #msg {
+      margin-bottom: 12px;
+      padding: 8px;
+      border-radius: 8px;
+      text-align: center;
+      display: none;
+    }
+    #msg.error { background: #fdd; color: var(--danger); }
+    #msg.success { background: #dfd; color: var(--success); }
+    #msg.info { background: #eef; color: #0055aa; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+    th { background: var(--card-bg); }
+
+    .dash-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; }
+    .ref-item { margin-bottom: 8px; padding: 8px; border: 1px solid #eee; border-radius: 6px; }
+    .extra { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  </style>
 </head>
 <body>
-<div id="msg"></div>
+  <div id="msg"></div>
 
-<!-- ВХОД / РЕГИСТРАЦИЯ -->
-<div id="loginScreen" style="display:none">
-  <div class="card">
-    <img class="logo" src="icon-192.png" alt="Логотип">
-    <h2 style="text-align:center">Курьер — смены</h2>
-    <div class="authTabs">
-      <button id="tabLogin" class="active" onclick="showAuthTab('login')">Вход</button>
-      <button id="tabReg" onclick="showAuthTab('reg')">Регистрация</button>
-    </div>
-    <div id="loginPanel">
-      <label>ФИО водителя</label>
-      <input id="loginFio" list="loginFioList" placeholder="Начните вводить фамилию">
-      <datalist id="loginFioList"></datalist>
-      <label>PIN-код</label>
-      <input id="loginPin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN">
-      <button onclick="doLogin()">Войти</button>
-    </div>
-    <div id="regPanel" style="display:none">
-      <label>ФИО водителя</label>
-      <input id="regFio" placeholder="Фамилия Имя Отчество">
-      <label>PIN-код (4–8 цифр, придётся запомнить)</label>
-      <input id="regPin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN">
-      <label>Автомобиль (не обязательно)</label>
-      <input id="regCar" placeholder="Марка/модель">
-      <label>Госномер (не обязательно)</label>
-      <input id="regPlate" placeholder="А123БВ116">
-      <button onclick="doRegister()">Зарегистрироваться</button>
-    </div>
-  </div>
-</div>
+  <!-- ВХОД / РЕГИСТРАЦИЯ -->
+  <div id="loginScreen" style="display:none">
+    <div class="card">
+      <h2>Вход / Регистрация</h2>
+      <div id="tabLogin" class="active" style="cursor:pointer; display:inline-block; margin-right:10px; font-weight:bold;">Вход</div>
+      <div id="tabReg" style="cursor:pointer; display:inline-block;">Регистрация</div>
 
-<!-- ГЛАВНЫЙ ЭКРАН -->
-<div id="menuScreen" style="display:none">
-  <div class="card" style="position:relative">
-    <button id="themeBtn" class="theme-btn" onclick="toggleTheme()" aria-label="Сменить тему">🌙</button>
-    <img class="logo-sm" src="icon-192.png" alt="Логотип">
-  </div>
-  <div class="card" id="dashCard">
-    <h2 id="dashTitle">Дашборд</h2>
-    <div id="dashBody"></div>
-    <button class="small" style="background:#5a4fcf;display:none" id="supBtn" onclick="openReport()">📊 Статистика всех водителей</button>
-  </div>
-  <div class="card">
-    <button class="menu" style="background:#2f6fed" onclick="openWork()">📋 Запись смены</button>
-    <button class="menu" style="background:#5a4fcf" onclick="openPl()">🧾 Путевые листы</button>
-    <button class="menu" style="background:#2f9e6e" onclick="openRefs()">📖 Справочник: врачи и клиники</button>
-    <button class="small" onclick="doLogout()">Выйти</button>
-  </div>
-</div>
-
-<!-- ЗАПИСЬ СМЕНЫ -->
-<div id="workScreen" style="display:none">
-  <div class="card">
-    <h2>Автомобиль</h2>
-    <label>Водитель</label>
-    <div id="meName" style="font-size:15px;font-weight:bold">—</div>
-    <label>Автомобиль</label>
-    <select id="carSel" onchange="onCarChange()"></select>
-    <button class="small" id="editCarBtn" style="display:none" onclick="openCarPanel('edit')">✎ Править выбранный автомобиль</button>
-    <button class="small" id="editDriverBtn" onclick="openDriverEdit()">✎ Править моё ФИО</button>
-    <div id="carPanel" style="display:none">
-      <label>Марка/модель</label>
-      <input id="carNameInput">
-      <label>Госномер</label>
-      <input id="carPlateInput">
-      <button style="background:#2f9e6e" onclick="saveCar()">Сохранить автомобиль</button>
-    </div>
-    <div id="driverEditPanel" style="display:none">
-      <label>Моё новое ФИО</label>
-      <input id="editDriverFio">
-      <button style="background:#2f9e6e" onclick="saveDriverEdit()">Сохранить ФИО</button>
-    </div>
-  </div>
-
-  <div class="card" id="startCard">
-    <h2>Открыть смену</h2>
-    <label>Дата смены</label>
-    <input id="shiftDate" type="date">
-    <label>Время начала смены</label>
-    <input id="timeStart" type="time">
-    <label>Одометр на начало</label>
-    <input id="odoStart" type="text" inputmode="decimal" placeholder="например, 125430">
-    <button onclick="startShift()">Начать смену</button>
-  </div>
-
-  <div class="card" id="shiftCard" style="display:none">
-    <h2>Отрезок</h2>
-    <label>Тип маршрута</label>
-    <select id="segType" onchange="onSegTypeChange()">
-      <option value="city">Городской</option>
-      <option value="inter">Междугородний</option>
-    </select>
-    <label>Откуда</label><input id="segFrom" list="segPointsList" value="ОФИС">
-    <label>Куда</label><input id="segTo" list="segPointsList">
-    <datalist id="segPointsList"></datalist>
-    <label>Одометр в точке «Куда» (с начала смены)</label><input id="segKm" type="text" inputmode="decimal" placeholder="показание одометра, км">
-    <button onclick="addSegment()">Добавить отрезок</button>
-  </div>
-
-  <div class="card" id="docCard" style="display:none">
-    <h2>Перевозка врача</h2>
-    <label>Врач (ФИО)</label><input id="docName" list="docNamesList">
-    <datalist id="docNamesList"></datalist>
-    <label>Куда везём (мед-точка)</label><input id="docPlace" list="docPlaceList">
-    <datalist id="docPlaceList"></datalist>
-    <label>Назначенное время посадки</label><input id="docTimeApp" type="time">
-    <label>Фактическое время посадки</label><input id="docTimeBoard" type="time">
-    <button style="background:#2f9e6e" onclick="addDoctorVisit()">Добавить врача</button>
-  </div>
-
-  <div class="card" id="finishCard" style="display:none">
-    <label>Заправка, л (если была)</label>
-    <input id="refuel" type="text" inputmode="decimal" placeholder="литров">
-    <label>Время окончания смены</label>
-    <input id="timeEnd" type="time">
-    <button style="background:#8892a0" onclick="finishShift()">Завершить смену и отправить</button>
-  </div>
-
-  <button class="small" onclick="goMenu()">← На главный экран</button>
-</div>
-
-<!-- СТАТИСТИКА (только старший) -->
-<div id="reportScreen" style="display:none">
-  <div class="card">
-    <h2>📊 Статистика всех водителей</h2>
-    <label>Месяц</label>
-    <input id="reportMonth" type="month" onchange="renderReport()">
-    <button class="small" onclick="backToReport()" id="backBtn" style="display:none">← К общему отчёту</button>
-  </div>
-  <div id="reportBody"></div>
-  <button class="small" onclick="goMenu()">← На главный экран</button>
-</div>
-
-<!-- СПРАВОЧНИК -->
-<div id="refsScreen" style="display:none">
-  <div class="card">
-    <h2>📖 Справочник</h2>
-    <div class="searchrow">
-      <div class="search-wrap">
-        <input id="refSearchDoc" placeholder="Фамилия врача" oninput="renderRefsDoc()">
-        <button class="clear-btn" id="clearDocBtn" onclick="clearRefSearch('doc')" aria-label="Очистить поиск">×</button>
+      <div id="loginPanel">
+        <label>ФИО водителя</label>
+        <input id="loginFio" placeholder="Иванов И.И.">
+        <label>PIN</label>
+        <input type="password" id="loginPin" placeholder="****">
+        <button onclick="doLogin()">Войти</button>
       </div>
-      <button class="icon-btn" onclick="openDocForm('add')" aria-label="Добавить врача">＋</button>
-    </div>
-    <div class="searchrow">
-      <div class="search-wrap">
-        <input id="refSearchCls" placeholder="Город клиники" oninput="renderRefsCls()">
-        <button class="clear-btn" id="clearClsBtn" onclick="clearRefSearch('cls')" aria-label="Очистить поиск">×</button>
+
+      <div id="regPanel" style="display:none">
+        <label>ФИО</label>
+        <input id="regFio" placeholder="Иванов И.И.">
+        <label>PIN (4–8 цифр)</label>
+        <input type="password" id="regPin" placeholder="****">
+        <label>Марка авто</label>
+        <input id="regCar" placeholder="Lada Vesta">
+        <label>Госномер</label>
+        <input id="regPlate" placeholder="А000АА00">
+        <button onclick="doRegister()">Зарегистрироваться</button>
       </div>
-      <button class="icon-btn" onclick="openClinicForm('add')" aria-label="Добавить клинику">＋</button>
     </div>
   </div>
 
-  <!-- ФОРМА ВРАЧА: добавление и правка (ФИО — обязательное поле) -->
-  <div class="card" id="docFormCard" style="display:none">
-    <h3 id="docFormTitle">Новый врач</h3>
-    <label>ФИО полностью</label><input id="docFio">
-    <label>Адрес</label><input id="docAddr">
-    <label>Телефон</label><input id="docTel" inputmode="tel">
-    <label>Ссылка на маршрут</label><input id="docRoute" inputmode="url">
-    <button style="background:#2f9e6e" onclick="saveDocForm()">Сохранить врача</button>
-    <button class="small" onclick="closeDocForm()">Отмена</button>
+  <!-- ГЛАВНЫЙ ЭКРАН (МЕНЮ) -->
+  <div id="menuScreen" style="display:none">
+    <div class="card" id="dashCard" style="display:none;">
+      <h3 id="dashTitle"></h3>
+      <div id="dashBody"></div>
+    </div>
+    <div class="card">
+      <button onclick="openWork()">📝 Начать/продолжить смену</button>
+      <button onclick="showScreen('plScreen')">🧾 Путевые листы</button>
+      <button onclick="if(isSupervisor(me)) openReport(); else msg('Доступ только для старшего')">📊 Отчёты (старший)</button>
+      <button onclick="openRefs()">🗂 Справочник</button>
+    </div>
+    <button style="width:auto; padding:8px 16px;" onclick="doLogout()">Выйти</button>
   </div>
 
-  <!-- ФОРМА КЛИНИКИ: добавление и правка -->
-  <div class="card" id="clinicFormCard" style="display:none">
-    <h3 id="clinicFormTitle">Новая клиника</h3>
-    <label>Город</label><input id="clinicCity">
-    <label>Наименование</label><input id="clinicName">
-    <label>Адрес</label><input id="clinicAddr">
-    <label>Телефон</label><input id="clinicTel" inputmode="tel">
-    <label>Дополнение (кабинеты, пароль, время)</label><textarea id="clinicExtra" rows="3" style="width:100%;box-sizing:border-box;padding:10px;font-size:14px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--text)"></textarea>
-    <label>Ссылка на маршрут</label><input id="clinicRoute" inputmode="url">
-    <label>День недели</label><input id="clinicDay" placeholder="Пн., Ср., Пт.">
-    <button style="background:#2f9e6e" onclick="saveClinicForm()">Сохранить клинику</button>
-    <button class="small" onclick="closeClinicForm()">Отмена</button>
+  <!-- ЭКРАН СМЕНЫ -->
+  <div id="workScreen" style="display:none">
+    <!-- Старт смены -->
+    <div id="startCard" style="display:none">
+      <div class="card">
+        <h2>Старт смены</h2>
+        <label>Дата</label>
+        <input type="date" id="shiftDate">
+        <label>Время начала</label>
+        <input type="time" id="timeStart">
+        <label>Одометр (начало)</label>
+        <input type="number" step="0.1" id="odoStart" placeholder="км">
+        <label>Автомобиль</label>
+        <select id="carSel" onchange="onCarChange()"></select>
+        <div id="carPanel" style="display:none; margin-top:12px;">
+          <input id="carNameInput" placeholder="Марка/модель">
+          <input id="carPlateInput" placeholder="Госномер">
+          <button onclick="saveCar()">Сохранить авто</button>
+          <button onclick="$('carPanel').style.display='none'" style="background:#ccc;">Отмена</button>
+        </div>
+        <button onclick="startShift()">Начать смену</button>
+      </div>
+    </div>
+
+    <!-- Работа в смене -->
+    <div id="shiftCard" style="display:none">
+      <div class="card">
+        <h3>Текущая смена: <span id="curCarLabel"></span></h3>
+        <p>Водитель: <b id="curDriverName"></b></p>
+        <p>Дата: <b id="curShiftDate"></b>, время: <b id="curTimeStart"></b></p>
+      </div>
+
+      <div class="card">
+        <h4>Новый отрезок</h4>
+        <label>Тип маршрута</label>
+        <select id="segType" onchange="onSegTypeChange()">
+          <option value="city">Городской</option>
+          <option value="inter">Междугородний</option>
+        </select>
+        <label>Откуда</label>
+        <input list="segPointsList" id="segFrom">
+        <datalist id="segPointsList"></datalist>
+        <label>Куда</label>
+        <input list="segPointsList" id="segTo">
+        <label>Одометр (на конец отрезка)</label>
+        <input type="number" step="0.1" id="segKm" placeholder="км">
+        <button onclick="addSegment()">Добавить отрезок</button>
+      </div>
+
+      <div class="card">
+        <h4>Перевозка врача</h4>
+        <label>Врач</label>
+        <input list="docNamesList" id="docName">
+        <datalist id="docNamesList"></datalist>
+        <label>Куда везём</label>
+        <input list="docPlaceList" id="docPlace">
+        <datalist id="docPlaceList"></datalist>
+        <label>Время приёма</label>
+        <input type="time" id="docTimeApp">
+        <label>Время посадки</label>
+        <input type="time" id="docTimeBoard">
+        <button onclick="addDoctorVisit()">Добавить перевозку</button>
+      </div>
+
+      <div class="card">
+        <h4>Завершение смены</h4>
+        <label>Время окончания</label>
+        <input type="time" id="timeEnd">
+        <label>Заправка (л)</label>
+        <input type="number" step="0.1" id="refuel" placeholder="л">
+        <button style="background:#d9534f;" onclick="finishShift()">Завершить смену</button>
+      </div>
+    </div>
   </div>
 
-  <div class="card" id="docsCard" style="display:none">
-    <h3>Врачи</h3>
-    <div id="refsDocs"></div>
+  <!-- ОТЧЁТЫ (СТАРШИЙ) -->
+  <div id="reportScreen" style="display:none">
+    <div class="card">
+      <h3>Отчёт по водителям</h3>
+      <label>Месяц (ГГГГ-ММ)</label>
+      <input type="month" id="reportMonth">
+      <button onclick="openReport()">Показать отчёт</button>
+      <button id="backBtn" style="display:none;" onclick="backToReport()">← Назад к общему отчёту</button>
+    </div>
+    <div id="reportBody"></div>
   </div>
-  <div class="card" id="clsCard" style="display:none">
-    <h3>Клиники</h3>
-    <div id="refsCls"></div>
-  </div>
-  <button class="small" onclick="goMenu()">← На главный экран</button>
-</div>
 
-<!-- ПУТЕВЫЕ ЛИСТЫ -->
-<div id="plScreen" style="display:none">
-  <div class="card">
-    <h2>🧾 Путевые листы</h2>
-    <label>Период</label>
-    <select id="plPeriod" onchange="plRenderList()">
-      <option value="day">День</option>
-      <option value="week">Неделя</option>
-      <option value="month">Месяц</option>
-    </select>
-    <label>Дата (любая внутри периода)</label>
-    <input id="plDate" type="date" onchange="plRenderList()">
-    <div id="plScopeRow" style="display:none">
-      <label>Данные</label>
-      <select id="plScope" onchange="plRenderList()">
-        <option value="mine">Только мои смены</option>
-        <option value="all">Все водители</option>
+  <!-- СПРАВОЧНИК -->
+  <div id="refsScreen" style="display:none">
+    <div class="card">
+      <h3>Справочник врачей</h3>
+      <input id="refSearchDoc" oninput="renderRefsDoc()" placeholder="Поиск по ФИО врача">
+      <button id="clearDocBtn" style="display:none;" onclick="$('refSearchDoc').value=''; renderRefsDoc()">×</button>
+      <div id="docsCard" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Справочник клиник</h3>
+      <input id="refSearchCls" oninput="renderRefsCls()" placeholder="Поиск по городу клиники">
+      <button id="clearClsBtn" style="display:none;" onclick="$('refSearchCls').value=''; renderRefsCls()">×</button>
+      <div id="clsCard" style="margin-top:8px;"></div>
+    </div>
+
+    <!-- Форма врача -->
+    <div id="docFormCard" class="card" style="display:none;">
+      <h4 id="docFormTitle"></h4>
+      <input id="docFio" placeholder="ФИО врача">
+      <input id="docAddr" placeholder="Адрес">
+      <input id="docTel" placeholder="Телефон">
+      <input id="docRoute" placeholder="Ссылка на маршрут">
+      <button onclick="saveDocForm()">Сохранить</button>
+      <button onclick="closeDocForm()" style="background:#ccc;">Отмена</button>
+    </div>
+
+    <!-- Форма клиники -->
+    <div id="clinicFormCard" class="card" style="display:none;">
+      <h4 id="clinicFormTitle"></h4>
+      <input id="clinicCity" placeholder="Город">
+      <input id="clinicName" placeholder="Название клиники">
+      <input id="clinicAddr" placeholder="Адрес">
+      <input id="clinicTel" placeholder="Телефон">
+      <input id="clinicExtra" placeholder="Доп. информация">
+      <input id="clinicRoute" placeholder="Ссылка на маршрут">
+      <input id="clinicDay" placeholder="День недели приёма">
+      <button onclick="saveClinicForm()">Сохранить</button>
+      <button onclick="closeClinicForm()" style="background:#ccc;">Отмена</button>
+    </div>
+  </div>
+
+  <!-- ПУТЕВЫЕ ЛИСТЫ -->
+  <div id="plScreen" style="display:none">
+    <div class="card">
+      <h2>🧾 Путевые листы</h2>
+      <label>Период</label>
+      <select id="plPeriod" onchange="plRenderList()">
+        <option value="day">День</option>
+        <option value="week">Неделя</option>
+        <option value="month">Месяц</option>
       </select>
+      <label>Дата (любая внутри периода)</label>
+      <input id="plDate" type="date" onchange="plRenderList()" value="">
+      <label>Email для отправки (опционально)</label>
+      <input id="plEmail" type="email" placeholder="email@example.com">
+      <button onclick="plDownloadMerged()">Скачать объединённые путевые листы</button>
+      <p id="plStatus" style="margin-top:8px; color:#666;"></p>
     </div>
-    <label>Email для отправки</label>
-    <input id="plEmail" inputmode="email" placeholder="buh@example.ru" onchange="plRenderList()">
-    <div id="plNumBlock"></div>
-    <div id="plList"></div>
-    <button style="background:#2f9e6e" onclick="plDownloadAll()">⬇ Скачать все PDF</button>
-    <button class="small" style="background:#2f9e6e" onclick="plDownloadMerged()">📚 Скачать одним файлом</button>
-    <button class="small" onclick="plEmailAll()">✉ Отправить все на email</button>
-    <button class="small" onclick="goMenu()">← На главный экран</button>
+    <div id="plList" style="margin-top:16px;"></div>
   </div>
-</div>
 
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
