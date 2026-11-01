@@ -144,7 +144,7 @@
   <div id="menuScreen" style="display:none">
     <div class="topbar">
       <span class="title" id="meName"></span>
-      <button id="themeBtn" onclick="toggleTheme()">🌙</button>
+      <button id="themeBtn2" onclick="toggleTheme()">🌙</button>
     </div>
 
     <div class="card" id="dashCard" style="display:none">
@@ -154,6 +154,7 @@
 
     <div class="card">
       <button onclick="openWork()">📝 Запись смены</button>
+      <button onclick="openMyStats()">📈 Моя статистика</button>
       <button onclick="openPl()">🧾 Путевые листы</button>
       <button id="supBtn" style="display:none" onclick="openReport()">📊 Статистика всех водителей</button>
       <button class="secondary" onclick="openRefs()">🗂 Справочник врачей и клиник</button>
@@ -181,12 +182,6 @@
       <select id="carSel" onchange="onCarChange()"></select>
       <div class="muted" style="margin-top:6px">Добавить или исправить автомобиль — в ⚙ Настройках</div>
 
-      <label>Тип маршрута (по умолчанию для смены)</label>
-      <select id="segType" onchange="onSegTypeChange()">
-        <option value="city">Городской</option>
-        <option value="inter">Междугородний</option>
-      </select>
-
       <button onclick="startShift()">Начать смену</button>
     </div>
 
@@ -194,11 +189,6 @@
     <div id="shiftCard" style="display:none">
       <div class="card">
         <h2>Отрезок маршрута</h2>
-        <label>Тип маршрута</label>
-        <select id="segType" onchange="onSegTypeChange()">
-          <option value="city">Городской</option>
-          <option value="inter">Междугородний</option>
-        </select>
         <label>Откуда</label>
         <input id="segFrom" list="segPointsList">
         <datalist id="segPointsList"></datalist>
@@ -237,6 +227,21 @@
     </div>
   </div>
 
+  <!-- МОЯ СТАТИСТИКА (личная — у всех водителей) -->
+  <div id="statsScreen" style="display:none">
+    <div class="topbar">
+      <button class="secondary" onclick="goMenu()">← Меню</button>
+    </div>
+    <div class="card">
+      <h2>📈 Моя статистика</h2>
+      <label>Месяц</label>
+      <input id="statsMonth" type="month" onchange="renderMyStats()">
+      <button id="statsBack" style="display:none" class="secondary" onclick="backToMyStats()">← К списку смен</button>
+    </div>
+    <div id="statsBody"></div>
+    <div id="statsDetail"></div>
+  </div>
+
   <!-- НАСТРОЙКИ -->
   <div id="settingsScreen" style="display:none">
     <div class="topbar">
@@ -251,12 +256,12 @@
       <input id="setFio" placeholder="Иванов Иван Иванович">
       <label>СНИЛС</label>
       <input id="setSnils" placeholder="000-000-000 00">
-      <label>Водительское удостоверение (ВУ)</label>
+      <label>Водительское удостоверение (ВУ) — номер</label>
       <input id="setVu">
+      <label>ВУ — дата выдачи</label>
+      <input id="setVuDate" placeholder="12.05.2019">
       <label>Класс</label>
       <input id="setKlass" placeholder="B, C…">
-      <label>Телефон (необязательно)</label>
-      <input id="setTel" inputmode="tel">
       <div id="setRoleBlock" style="display:none">
         <label>Роль (назначается старшим)</label>
         <input id="setRole" placeholder="пусто — обычный; «старший» — статистика всех">
@@ -269,6 +274,19 @@
         <input id="carNameInput" placeholder="Granta седан">
         <label>Госномер</label>
         <input id="carPlateInput" placeholder="В722ВУ18">
+        <label>Собственность</label>
+        <select id="carOwnInput">
+          <option value="личная">личная</option>
+          <option value="рабочая">рабочая</option>
+        </select>
+        <label>Собственник</label>
+        <input id="carOwnerInput" placeholder="ИП Афанасьева А.А.">
+        <label>Адрес собственника</label>
+        <input id="carAddrInput">
+        <label>Телефон собственника</label>
+        <input id="carTelInput" inputmode="tel">
+        <label>ОГРН / ОГРНИП</label>
+        <input id="carOgrnInput" inputmode="numeric">
         <button id="setCarBtn" onclick="saveCar()">Добавить автомобиль</button>
         <button class="secondary" onclick="$('carPanel').style.display='none'">Отмена</button>
       </div>
