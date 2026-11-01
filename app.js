@@ -197,7 +197,7 @@ function enterApp(fio, role, driverId) {
     id: driverId || found.id || '',
     fio: found.fio || fio,
     role: role || found.role || '',
-    cars: myCars({ id: driverId || found.id || '' })
+    cars: myCars({ fio: found.fio || fio })   // поиск списка машин по ФИО
   };
   renderCars();
   showScreen('menuScreen');
