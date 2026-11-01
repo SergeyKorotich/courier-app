@@ -48,10 +48,16 @@ const carLabel = c => (((c && c.name) || '') + ' ' + ((c && c.plate) || '')).tri
 // Личное авто видит только владелец (или авто без владельца), рабочее — все
 function myCars(m) {
   const did = (m && m.id) || '';
-  return carsRef.filter(c => {
-    const own = String(c.own || '').trim().toLowerCase();
-    return own !== 'личная' || !c.driverId || c.driverId === did;
+  const seen = {};
+  const out = [];
+  carsRef.forEach(c => {
+    // дубли (рабочие авто повторяются в списке каждого водителя) — по одному разу
+    if (c.id) { if (seen[c.id]) return; seen[c.id] = true; }
+    // рабочие (j-) — всем; личные — только тому, к кому привязаны
+    const isWork = String(c.id || '').startsWith('j-');
+    if (isWork || c.driverId === did) out.push(c);
   });
+  return out;
 }
 
 // ================= ТЕМА =================
