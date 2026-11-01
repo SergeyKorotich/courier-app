@@ -354,6 +354,11 @@ async function loadDrivers() {
   }
   flushQueue();
 }
+// Подпись автомобиля в списках: «марка номер» — как в carLabel смены
+function carLabel(c) {
+  if (!c) return '';
+  return [c.name || c.car || '', c.plate || ''].join(' ').trim();
+}
 
 function renderCars() {
   if (!me) return;
@@ -369,9 +374,13 @@ function renderCars() {
   $('carSel').innerHTML += '<option value="__new">➕ Добавить автомобиль…</option>';
   updateCarButtons();
   $('meName').textContent = me.fio;
-  // Восстанавливаем выбор: авто открытой смены, иначе последнее использованное
+    // Восстанавливаем выбор: авто открытой смены, иначе последнее использованное,
+  // иначе первая личная машина водителя
   if (shift && shift.carId) selectCarById(shift.carId);
-  else selectCarById(localStorage.getItem('lastCarId'));
+  else if (!selectCarById(localStorage.getItem('lastCarId'))) {
+    const own = cars.find(c => c.personal);
+    if (own) selectCarById(own.id);
+  }
 }
 
 function currentCar() {
