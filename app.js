@@ -695,7 +695,7 @@ function rememberRef(list, refType, name) {
 }
 
 // ================= ЭКРАНЫ =================
-const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen'];
+const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'statsScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen'];
 function showScreen(name) {
   SCREENS.forEach(id => { $(id).style.display = 'none'; });
   $(name).style.display = 'block';
