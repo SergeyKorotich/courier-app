@@ -310,7 +310,15 @@ function isSupervisor(d) {
 function applyRefs(data) {
   drivers = Array.isArray(data.drivers) ? data.drivers : [];
   drivers.sort((a, b) => ruCmp(a.fio, b.fio));
-  carsRef = Array.isArray(data.cars) ? data.cars : [];
+
+  // Машины лежат вложенными в каждого водителя (drivers[].cars),
+  // а не отдельным массивом в снимке. Собираем их в плоский список
+  // и приводим поле personal (с сервера) к own ('личная'), которое ждёт фронт.
+  carsRef = [];
+  drivers.forEach(d => (d.cars || []).forEach(c =>
+    carsRef.push(Object.assign({}, c, { own: c.own || (c.personal ? 'личная' : '') }))
+  ));
+
   if (Array.isArray(data.points) && data.points.length) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
   }
@@ -319,11 +327,13 @@ function applyRefs(data) {
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
+
   // Подсказки врача — только из DoctorsRef (лист «Врачи» не подмешивается)
   renderSegPoints();
   renderDocPlaceList();
   renderDocNames();
   renderLoginHints();
+
   if (me) {
     const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
     if (found) { me.id = found.id || me.id; me.role = found.role || me.role; }
