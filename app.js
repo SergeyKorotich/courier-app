@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbzq-ZwU9rCSy3mYpfjJfjs6YNnfqgY7STKJgNJgFzmuG4UFQvoDHKqD7sSLHBwysYKX/exec'; // TODO: сменить после переразвёртывания веб-приложения
+const API_URL = 'https://script.google.com/macros/s/AKfycbzq-ZwU9rCSy3mYpfjJfjs6YNnfqgY7STKJgNJgFzmuG4UFQvoDHKqD7sSLHBwysYKX/exec'; // URL деплоя сохраняется при «Новая версия»
 
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t; };
@@ -9,6 +9,13 @@ const minToHHMM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + Strin
 const ruCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'ru');
 const normFio = s => String(s || '').trim().toLowerCase();
 
+// Даты на сервере храним и отдаём в ДД.ММ.ГГГГ, а сравниваем по ISO:
+// «28.10.2026» и «2026-10-28» в строковом сравнении дают неверный порядок
+function isoOf(dateStr) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(dateStr || '').trim());
+  return m ? m[3] + '-' + m[2] + '-' + m[1] : String(dateStr || '');
+}
+
 let me = null;
 let shift = null;
 let segments = [];
@@ -18,10 +25,12 @@ let interPoints = [];
 let medPoints = []; // «Куда везём врача» — лист MedPoints
 let docNames = [];
 let drivers = [];
+let carsRef = [];        // все авто с листа Cars: { id, driverId, own, name, plate, row }
 let carEditMode = null;  // 'new' | 'edit'
-let carEditRow = null;   // номер строки авто на листе Drivers (или null)
+let carEditId = null;    // id авто на листе Cars (или null)
 let shiftsData = [];
 let reportDetail = null;
+let myStats = null;      // данные личной статистики: { segs, doctors } по id смен
 let doctorsContact = [];
 let clinics = [];
 // Формы справочника: null = добавление, ключ = правка
@@ -30,12 +39,20 @@ let clinicEditKey = null;
 
 const QUEUE_KEY = 'sendQueue';
 const REF_KEY = 'refCache';
-const STATE_KEY = 'appState_v1';
+const STATE_KEY = 'appState_v2'; // v1 хранил смену с «город/трасса» — новая структура
 const SHIFTS_KEY = 'shiftsCache';
 const AUTH_KEY = 'authCreds';
-const LAST_SEG_KEY = 'lastSegType'; // последний выбранный тип маршрута
 const MAX_TRIES = 3; // попыток на пакет до пропуска
-const carLabel = c => ((c.name || '') + ' ' + (c.plate || '')).trim();
+const carLabel = c => (((c && c.name) || '') + ' ' + ((c && c.plate) || '')).trim();
+
+// Личное авто видит только владелец (или авто без владельца), рабочее — все
+function myCars(m) {
+  const did = (m && m.id) || '';
+  return carsRef.filter(c => {
+    const own = String(c.own || '').trim().toLowerCase();
+    return own !== 'личная' || !c.driverId || c.driverId === did;
+  });
+}
 
 // ================= ТЕМА =================
 const THEME_KEY = 'theme';
@@ -109,7 +126,7 @@ async function doLogin() {
     const out = await serverAuth('login', { fio: fio, pin: pin });
     if (out.ok) {
       setAuth(out.fio, pin);
-      enterApp(out.fio, out.role || '');
+      enterApp(out.fio, out.role || '', out.driverId || '');
       // Инфо о восстановленной смене показал enterApp — не затираем её
       if (!shift) msg('Вход выполнен: ' + out.fio);
     } else {
@@ -119,7 +136,7 @@ async function doLogin() {
     const d = drivers.find(x => normFio(x.fio) === normFio(fio));
     if (d) {
       setAuth(d.fio, pin);
-      enterApp(d.fio, d.role || '');
+      enterApp(d.fio, d.role || '', d.id || '');
       if (!shift) msg('Нет сети: вход по сохранённым данным. При появлении сети проверим PIN.');
     } else {
       msg('Нет сети, и это ФИО не найдено в кэше. Подключись и войди.');
@@ -151,10 +168,16 @@ async function doRegister() {
     if (out.ok) {
       setAuth(out.fio, pin);
       if (!drivers.find(x => normFio(x.fio) === normFio(out.fio))) {
-        drivers.push({ fio: out.fio, cars: car || plate ? [{ name: car, plate: plate, row: null }] : [], role: '' });
+        drivers.push({ id: out.driverId || '', fio: out.fio, role: '' });
         drivers.sort((a, b) => ruCmp(a.fio, b.fio));
       }
-      enterApp(out.fio, '');
+      // Авто при регистрации — личное; на сервер уедет отдельной записью,
+      // локально показываем сразу
+      if (car || plate) {
+        carsRef.push({ id: '', driverId: out.driverId || '', own: 'личная',
+          name: car, plate: plate, row: null });
+      }
+      enterApp(out.fio, '', out.driverId || '');
       if (!shift) msg('Регистрация готова: ' + out.fio + (car || plate ? '\nАвто появится в таблице при синхронизации' : ''));
     } else {
       msg(out.error || 'Не удалось зарегистрироваться');
@@ -164,12 +187,13 @@ async function doRegister() {
   }
 }
 
-function enterApp(fio, role) {
-  const found = drivers.find(x => normFio(x.fio) === normFio(fio));
+function enterApp(fio, role, driverId) {
+  const found = drivers.find(x => normFio(x.fio) === normFio(fio)) || {};
   me = {
-    fio: found ? found.fio : fio,
-    role: role || (found ? found.role : ''),
-    cars: found ? (found.cars || []) : []
+    id: driverId || found.id || '',
+    fio: found.fio || fio,
+    role: role || found.role || '',
+    cars: myCars({ id: driverId || found.id || '' })
   };
   renderCars();
   showScreen('menuScreen');
@@ -190,8 +214,7 @@ function doLogout() {
 function saveState() {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify({
-      shift: shift, segments: segments, doctorVisits: doctorVisits,
-      segType: $('segType') ? $('segType').value : 'city'
+      shift: shift, segments: segments, doctorVisits: doctorVisits
     }));
   } catch (e) { console.warn('Не удалось сохранить состояние:', e); }
 }
@@ -287,6 +310,7 @@ function isSupervisor(d) {
 function applyRefs(data) {
   drivers = Array.isArray(data.drivers) ? data.drivers : [];
   drivers.sort((a, b) => ruCmp(a.fio, b.fio));
+  carsRef = Array.isArray(data.cars) ? data.cars : [];
   if (Array.isArray(data.points) && data.points.length) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
   }
@@ -302,7 +326,8 @@ function applyRefs(data) {
   renderLoginHints();
   if (me) {
     const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
-    if (found) { me.cars = found.cars || []; me.role = found.role || me.role; }
+    if (found) { me.id = found.id || me.id; me.role = found.role || me.role; }
+    me.cars = myCars(me);
     renderCars();
   }
 }
@@ -334,43 +359,43 @@ function renderCars() {
   if (!me) return;
   const cars = (me.cars || []).slice().sort((a, b) => ruCmp(carLabel(a), carLabel(b)));
   // Авто из открытой смены обязано быть в списке, даже если справочник ещё не доехал
-  if (shift && shift.carLabel && !cars.find(c => carLabel(c) === shift.carLabel)) {
-    cars.unshift({ name: shift.carLabel, plate: '', row: null });
+  if (shift && shift.carId && !cars.find(c => c.id === shift.carId)) {
+    cars.unshift({ id: shift.carId, name: shift.carLabel || '', plate: '', row: null });
   }
+  const optVal = c => c.id || carLabel(c);
   $('carSel').innerHTML = cars.length
-    ? cars.map(c => `<option value="${esc(carLabel(c))}">${esc(carLabel(c))}</option>`).join('')
+    ? cars.map(c => `<option value="${esc(optVal(c))}">${esc(carLabel(c))}</option>`).join('')
     : '<option value="">— нет автомобилей —</option>';
   $('carSel').innerHTML += '<option value="__new">➕ Добавить автомобиль…</option>';
   updateCarButtons();
   $('meName').textContent = me.fio;
   // Восстанавливаем выбор: авто открытой смены, иначе последнее использованное
-  if (shift && shift.carLabel) selectCarByLabel(shift.carLabel);
-  else selectCarByLabel(localStorage.getItem('lastCar'));
+  if (shift && shift.carId) selectCarById(shift.carId);
+  else selectCarById(localStorage.getItem('lastCarId'));
 }
 
-function currentCarLabel() {
+function currentCar() {
   const v = $('carSel').value;
-  return (v === '__new' || !v) ? null : v;
+  if (!v || v === '__new') return null;
+  return (me.cars || []).find(c => (c.id || carLabel(c)) === v) || null;
 }
 
 function updateCarButtons() {
-  if (!$('editCarBtn')) return; // правка авто перенесена в «Настройки»
-  const has = !!currentCarLabel() && (me.cars || []).length > 0;
-  $('editCarBtn').style.display = has ? 'block' : 'none';
+  // Правка авто — в «Настройках», на экране смены кнопки нет
 }
 
-function selectCarByLabel(label) {
-  if (!label) return false;
-  const opt = Array.from($('carSel').options).find(o => o.value === label);
-  if (opt) { $('carSel').value = label; updateCarButtons(); return true; }
+function selectCarById(id) {
+  if (!id) return false;
+  const opt = Array.from($('carSel').options).find(o => o.value === id);
+  if (opt) { $('carSel').value = id; updateCarButtons(); return true; }
   return false;
 }
 
-// Подсказки «Откуда/Куда» переключаются по типу маршрута:
-// городской — Points, междугородний — InterPoints
+// Подсказки «Откуда/Куда» — единый список точек:
+// деление город/междугородний ушло вместе с типом маршрута
 function renderSegPoints() {
-  if (!$('segType') || !$('segPointsList')) return;
-  const src = $('segType').value === 'inter' ? interPoints : points;
+  if (!$('segPointsList')) return;
+  const src = Array.from(new Set(points.concat(interPoints)));
   $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 // Подсказки «Куда везём» — только MedPoints
@@ -383,16 +408,10 @@ function renderDocNames() {
   $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
 }
 
-function onSegTypeChange() {
-  localStorage.setItem(LAST_SEG_KEY, $('segType').value);
-  renderSegPoints();
-  saveState();
-}
-
 function onCarChange() {
   if ($('carSel').value === '__new') {
     // Добавление/правка авто — в «Настройках»; выбор сбрасываем на прежний
-    const restored = selectCarByLabel(localStorage.getItem('lastCar'));
+    const restored = selectCarById(localStorage.getItem('lastCarId'));
     if (!restored) {
       const opt = Array.from($('carSel').options).find(o => o.value && o.value !== '__new');
       if (opt) { $('carSel').value = opt.value; updateCarButtons(); }
@@ -402,73 +421,8 @@ function onCarChange() {
     return;
   }
   updateCarButtons();
-  if (me) localStorage.setItem('lastCar', $('carSel').value);
+  if (me) localStorage.setItem('lastCarId', $('carSel').value);
 }
-
-// mode: 'new' — новый автомобиль; 'edit' + row — правка известного серверу авто
-function openCarPanel(mode, row) {
-  if (!me) { msg('Сначала войди'); return; }
-  carEditMode = mode;
-  let c = null;
-  if (mode === 'edit') {
-    c = row ? me.cars.find(x => x.row === row)
-            : me.cars.find(x => x.row) || me.cars[0];
-    if (!c) { msg('Нет автомобиля для правки'); return; }
-    if (!c.row) { msg('Автомобиль ещё не синхронизирован — правка будет доступна после синхронизации'); return; }
-    $('carNameInput').value = c.name || '';
-    $('carPlateInput').value = c.plate || '';
-  } else {
-    $('carNameInput').value = '';
-    $('carPlateInput').value = '';
-  }
-  carEditRow = c ? (c.row || null) : null;
-  const btn = $('setCarBtn');
-  if (btn) btn.textContent = mode === 'edit' ? 'Сохранить автомобиль' : 'Добавить автомобиль';
-  const panel = $('carPanel');
-  if (panel) panel.style.display = 'block';
-}
-
-async function saveCar() {
-  if (!me) { msg('Сначала войди'); return; }
-  const car = $('carNameInput').value.trim();
-  const plate = $('carPlateInput').value.trim();
-  if (!car || !plate) { msg('Укажи марку и госномер'); return; }
-  const label = car + ' ' + plate;
-  msg('Сохраняю автомобиль…');
-  // В смене с отрезками сменить авто нельзя: одометр начала привязан к конкретной машине
-  if (shift && segments.length > 0) {
-    msg('В смене уже есть отрезки — сменить автомобиль нельзя.\nЗавершите смену и откройте новую с нужным авто.');
-    $('carPanel').style.display = 'none';
-    return;
-  }
-  let r;
-  const editing = (carEditMode === 'edit' && carEditRow != null)
-    ? me.cars.find(x => x.row === carEditRow)
-    : null;
-  if (editing && editing.row) {
-    // Правка известна серверу по номеру строки
-    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'driveredit', row: editing.row, fio: me.fio, car: car, plate: plate }]);
-    editing.name = car; editing.plate = plate;
-  } else {
-    // Новый автомобиль
-    r = await sendOrQueue([{ id: 'car-' + uid(), type: 'driver', fio: me.fio, car: car, plate: plate }]);
-    me.cars.push({ name: car, plate: plate, row: null });
-  }
-  // Если смена открыта без отрезков — привязываем её к новому авто
-  if (shift) {
-    shift.carLabel = label;
-    shift.carId = shift.driverId + '|' + label;
-    saveState();
-  }
-  localStorage.setItem('lastCar', label);
-  $('carPanel').style.display = 'none';
-  renderCars();
-  renderSettingsCars();
-  selectCarByLabel(label);
-  msg(r.sent ? 'Автомобиль сохранён: ' + label
-             : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
-}
-
 // ================= НАСТРОЙКИ =================
 function openSettings() {
   if (!me) { msg('Сначала войди'); return; }
@@ -482,8 +436,9 @@ function renderSettings() {
   $('setFio').value = me.fio;
   $('setSnils').value = found.snils || '';
   $('setVu').value = found.vu || '';
+  $('setVuDate').value = found.vuDate || '';
   $('setKlass').value = found.klass || '';
-  $('setTel').value = found.phone || '';
+  // Телефон в профиле водителя больше нет — это реквизит собственника авто (Cars)
   // Роль назначает только старший
   $('setRoleBlock').style.display = isSupervisor(me) ? 'block' : 'none';
   if (isSupervisor(me)) $('setRole').value = found.role || '';
@@ -494,7 +449,7 @@ function renderSettings() {
   const btn = $('setCarBtn');
   if (btn) btn.textContent = 'Добавить автомобиль';
   carEditMode = null;
-  carEditRow = null;
+  carEditId = null;
 }
 
 function renderSettingsCars() {
@@ -504,25 +459,110 @@ function renderSettingsCars() {
   list.innerHTML = cars.length
     ? cars.map(c => `
       <div class="ref-item">
-        <b>${esc(carLabel(c))}</b>${c.row ? '' : ' <span class="empty">(ещё не синхронизирован)</span>'}
-        <a class="edit" href="#" onclick="openCarPanel('edit', ${c.row || 'null'});return false">✎ править</a>
+        <b>${esc(carLabel(c))}</b>${c.own ? ' <span class="muted">(' + esc(c.own) + ')</span>' : ''}${c.id ? '' : ' <span class="empty">(ещё не синхронизирован)</span>'}
+        <a class="edit" href="#" onclick="openCarPanel('edit','${esc(c.id || carLabel(c))}');return false">✎ править</a>
       </div>`).join('')
     : '<div class="ref-item empty">Автомобилей нет — добавьте первый ниже.</div>';
 }
 
-// Профиль: ФИО (через driverrename — переименует все строки), СНИЛС, ВУ,
-// класс, телефон, роль (только для старшего). Префикс/номер ПЛ — отдельная
-// кнопка (plNumSave) со своей проверкой уникальности префикса на сервере.
+// mode: 'new' — новый автомобиль; 'edit' + id — правка известного серверу авто
+function openCarPanel(mode, id) {
+  if (!me) { msg('Сначала войди'); return; }
+  carEditMode = mode;
+  let c = null;
+  if (mode === 'edit') {
+    c = id ? me.cars.find(x => x.id === id)
+            : me.cars.find(x => x.id) || me.cars[0];
+    if (!c) { msg('Нет автомобиля для правки'); return; }
+    if (!c.id) { msg('Автомобиль ещё не синхронизирован — правка будет доступна после синхронизации'); return; }
+    $('carNameInput').value = c.name || '';
+    $('carPlateInput').value = c.plate || '';
+    $('carOwnInput').value = c.own || 'личная';
+    $('carOwnerInput').value = c.owner || '';
+    $('carAddrInput').value = c.addr || '';
+    $('carTelInput').value = c.tel || '';
+    $('carOgrnInput').value = c.ogrn || '';
+  } else {
+    $('carNameInput').value = '';
+    $('carPlateInput').value = '';
+    $('carOwnInput').value = 'личная';
+    $('carOwnerInput').value = '';
+    $('carAddrInput').value = '';
+    $('carTelInput').value = '';
+    $('carOgrnInput').value = '';
+  }
+  carEditId = c ? (c.id || null) : null;
+  const btn = $('setCarBtn');
+  if (btn) btn.textContent = mode === 'edit' ? 'Сохранить автомобиль' : 'Добавить автомобиль';
+  const panel = $('carPanel');
+  if (panel) panel.style.display = 'block';
+}
+
+async function saveCar() {
+  if (!me) { msg('Сначала войди'); return; }
+  const car = $('carNameInput').value.trim();
+  const plate = $('carPlateInput').value.trim();
+  const own = ($('carOwnInput') ? $('carOwnInput').value : 'личная').trim() || 'личная';
+  const owner = $('carOwnerInput') ? $('carOwnerInput').value.trim() : '';
+  const addr = $('carAddrInput') ? $('carAddrInput').value.trim() : '';
+  const tel = $('carTelInput') ? $('carTelInput').value.trim() : '';
+  const ogrn = $('carOgrnInput') ? $('carOgrnInput').value.trim() : '';
+  if (!car || !plate) { msg('Укажи марку и госномер'); return; }
+  const label = car + ' ' + plate;
+  msg('Сохраняю автомобиль…');
+  // В смене с отрезками сменить авто нельзя: одометр начала привязан к конкретной машине
+  if (shift && segments.length > 0) {
+    msg('В смене уже есть отрезки — сменить автомобиль нельзя.\nЗавершите смену и откройте новую с нужным авто.');
+    $('carPanel').style.display = 'none';
+    return;
+  }
+  let r, saved;
+  const editing = (carEditMode === 'edit' && carEditId) ? me.cars.find(x => x.id === carEditId) : null;
+  if (editing) {
+    // Правка по id авто на Cars
+    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'caredit', row: editing.row || null,
+      driverId: me.id, own: own, car: car, plate: plate,
+      owner: owner, addr: addr, tel: tel, ogrn: ogrn }]);
+    editing.name = car; editing.plate = plate; editing.own = own;
+    editing.owner = owner; editing.addr = addr; editing.tel = tel; editing.ogrn = ogrn;
+    saved = editing;
+  } else {
+    // Новый автомобиль: запись типа car, связь через id водителя
+    r = await sendOrQueue([{ id: 'car-' + uid(), type: 'car', driverId: me.id,
+      own: own, car: car, plate: plate,
+      owner: owner, addr: addr, tel: tel, ogrn: ogrn }]);
+    saved = { id: '', driverId: me.id, own: own, name: car, plate: plate,
+      owner: owner, addr: addr, tel: tel, ogrn: ogrn, row: null };
+    me.cars.push(saved);
+  }
+  // Если смена открыта без отрезков — привязываем её к новому авто
+  if (shift) {
+    shift.carLabel = label;
+    if (saved.id) shift.carId = saved.id;
+    saveState();
+  }
+  localStorage.setItem('lastCarId', saved.id || label);
+  $('carPanel').style.display = 'none';
+  renderCars();
+  renderSettingsCars();
+  selectCarById(saved.id || label);
+  msg(r.sent ? 'Автомобиль сохранён: ' + label
+             : 'Нет сети: автомобиль записан в очередь и попадёт в таблицу при синхронизации');
+}
+
+// Профиль: ФИО (через driverrename — переименует все строки), СНИЛС,
+// ВУ номер, ВУ дата, класс, роль (только для старшего). Префикс/номер ПЛ —
+// отдельная кнопка (plNumSave) со своей проверкой на сервере.
 async function saveSettings() {
   if (!me) { msg('Сначала войди'); return; }
   const fio = $('setFio').value.trim().replace(/\s+/g, ' ');
   if (!fio) { msg('Укажи ФИО'); return; }
   const profile = {
-    id: 'dpr-' + uid(), type: 'driverprofile', fioOld: me.fio,
+    id: 'dpr-' + uid(), type: 'driverprofile', driverId: me.id, fioOld: me.fio,
     snils: $('setSnils').value.trim(),
     vu: $('setVu').value.trim(),
-    klass: $('setKlass').value.trim(),
-    tel: $('setTel').value.trim()
+    vuDate: $('setVuDate').value.trim(),
+    klass: $('setKlass').value.trim()
   };
   if (isSupervisor(me)) profile.role = $('setRole').value.trim();
   const recs = [profile];
@@ -536,7 +576,7 @@ async function saveSettings() {
   const dr = drivers.find(x => normFio(x.fio) === normFio(me.fio));
   if (dr) {
     dr.snils = profile.snils; dr.vu = profile.vu;
-    dr.klass = profile.klass; dr.phone = profile.tel;
+    dr.vuDate = profile.vuDate; dr.klass = profile.klass;
     if (isSupervisor(me)) dr.role = profile.role || '';
     if (renamed) dr.fio = fio;
   }
@@ -664,18 +704,16 @@ function showStart() {
   $('docCard').style.display = 'none';
   $('finishCard').style.display = 'none';
   $('carSel').disabled = false;
-  if (!$('segType').value) $('segType').value = localStorage.getItem(LAST_SEG_KEY) === 'inter' ? 'inter' : 'city';
 }
 
 function openWork() {
   if (shift) showWork(); else showStart();
 }
-
 // ================= ДАШБОРД =================
 function renderDashboard() {
   if (!me) return;
   const month = todayISO().slice(0, 7);
-  const rows = shiftsData.filter(s => normFio(s.driverId) === normFio(me.fio) && String(s.date || '').startsWith(month));
+  const rows = shiftsData.filter(s => normFio(s.driverId) === normFio(me.fio) && isoOf(s.date).startsWith(month));
   let total = 0, refuel = 0, minutes = 0;
   rows.forEach(s => {
     total += parseFloat(s.totalKm) || 0;
@@ -695,7 +733,170 @@ function renderDashboard() {
   $('supBtn').style.display = isSupervisor(me) ? 'block' : 'none';
 }
 
+// ================= СТАТИСТИКА (личная — у всех) =================
+// Свои смены месяца; в деталях смены — правка отрезков (segmentedit)
+// и перевозимых врачей (doctorsedit). Данные отрезков и перевозок —
+// с сервера: ?page=data&ids=<id смены>
+function openMyStats() {
+  if (!me) { msg('Сначала войди'); return; }
+  showScreen('statsScreen');
+  if (!$('statsMonth').value) $('statsMonth').value = todayISO().slice(0, 7);
+  $('backBtn').style.display = 'none';
+  renderMyStats();
+}
+
+function renderMyStats() {
+  const month = $('statsMonth').value || todayISO().slice(0, 7);
+  const rows = shiftsData
+    .filter(s => normFio(s.driverId) === normFio(me.fio) && isoOf(s.date).startsWith(month))
+    .sort((a, b) => isoOf(a.date) < isoOf(b.date) ? -1 : 1);
+  let total = 0, minutes = 0;
+  rows.forEach(s => {
+    total += parseFloat(s.totalKm) || 0;
+    minutes += shiftMinutes(s);
+  });
+  const list = rows.map(s => `
+    <div class="ref-item">
+      <b>${esc(s.date)}</b> — ${esc(s.carLabel || '')}
+      <a class="edit" href="#" onclick="openMyShiftDetail('${escJsName(s.id)}');return false">✎ отрезки и врачи</a><br>
+      ${esc(s.timeStart || '')}–${esc(s.timeEnd || '')}, км: ${esc(s.totalKm || 0)},
+      ${minToHHMM(shiftMinutes(s))}${s.refuel ? ', заправка ' + esc(s.refuel) + ' л' : ''}
+      <div style="font-size:13px;color:var(--muted)">Маршрут: ${esc(s.route || '—')}</div>
+    </div>`).join('');
+  $('statsBody').innerHTML = `
+    <div class="card"><h3>Мои смены — ${esc(month)}</h3>
+      Смен: ${rows.length}, пробег: ${total.toFixed(1)} км, время: ${minToHHMM(minutes)}
+    </div>` +
+    (rows.length ? list : '<div class="ref-item empty">Смен за месяц нет.</div>');
+  $('statsDetail').innerHTML = '';
+  $('backBtn').style.display = 'none';
+}
+
+// Детали смены: отрезки + перевозки врачей, каждая строка правится
+let myShiftDetailId = null;
+
+async function openMyShiftDetail(shiftId) {
+  if (!shiftId) { msg('У этой смены нет id — обнови данные при сети'); return; }
+  myShiftDetailId = shiftId;
+  msg('Загружаю отрезки и перевозки…');
+  let segs = [], docs = [];
+  try {
+    const out = await (await fetch(API_URL + '?page=data&ids=' + encodeURIComponent(shiftId))).json();
+    if (!out.ok) { msg('Ошибка: ' + (out.error || 'сервер')); return; }
+    segs = out.segments[shiftId] || [];
+    docs = (out.doctors && out.doctors[shiftId]) || [];
+  } catch (e) {
+    msg('Нет сети: попробуй позже');
+    return;
+  }
+  // Пробег пересчитываем по отрезкам — так сразу видно результат правок
+  const sumKm = segs.reduce((a, x) => a + (parseFloat(x.km) || 0), 0);
+  const segRows = segs.length ? segs.map(x => `
+    <div class="ref-item">
+      <b>${esc(x.from)} → ${esc(x.to)}</b>, одометр: ${esc(x.kmAtB)}, пробег: ${esc(x.km)} км
+      <a class="edit" href="#" onclick="editSegRow('${escJsName(x.id)}','${escJsName(x.from)}','${escJsName(x.to)}','${escJsName(x.kmAtB)}','${escJsName(x.km)}');return false">✎</a>
+    </div>`).join('') : '<div class="ref-item empty">Отрезков нет.</div>';
+  const docRows = docs.length ? docs.map(x => `
+    <div class="ref-item">
+      <b>${esc(x.doctor)}</b> → ${esc(x.place || '—')},
+      назначено: ${esc(x.timeAppointed || '—')}, посадка: ${esc(x.timeBoarding || '—')}
+      <a class="edit" href="#" onclick="editDocRow('${escJsName(x.recordId)}','${escJsName(x.doctor)}','${escJsName(x.place)}','${escJsName(x.timeAppointed)}','${escJsName(x.timeBoarding)}');return false">✎</a>
+    </div>`).join('') : '<div class="ref-item empty">Перевозок врачей нет.</div>';
+  $('statsBody').innerHTML = '';
+  $('backBtn').style.display = 'block';
+  $('statsDetail').innerHTML = `
+    <div class="card"><h3>Смена ${esc(shiftId)}</h3>
+      Отрезков: ${segs.length}, сумма пробега: ${sumKm.toFixed(1)} км
+      ${segs.length ? '<div class="empty">Правка отрезка пересчитает сумму; общий пробег смены в таблице обновится при следующей сдаче данных.</div>' : ''}
+    </div>
+    <div class="card"><h4>Отрезки</h4>${segRows}</div>
+    <div class="card"><h4>Перевозимые врачи</h4>${docRows}</div>`;
+}
+
+function backToMyStats() {
+  myShiftDetailId = null;
+  renderMyStats();
+}
+
+// Правка отрезка: форма подставляется в карточку строки
+let segEditId = null;
+
+function editSegRow(id, from, to, kmAtB, km) {
+  segEditId = id;
+  const host = document.createElement('div');
+  host.id = 'segEditCard';
+  host.className = 'ref-item';
+  host.innerHTML = `
+    <b>Правка отрезка</b>
+    <label>Откуда</label><input id="segEFrom" value="${esc(from)}">
+    <label>Куда</label><input id="segETo" value="${esc(to)}">
+    <label>Одометр, км</label><input id="segEOdo" inputmode="decimal" value="${esc(kmAtB)}">
+    <label>Пробег, км</label><input id="segEKm" inputmode="decimal" value="${esc(km)}">
+    <button class="small" onclick="saveSegEdit()">Сохранить</button>
+    <button class="small" onclick="document.getElementById('segEditCard').remove();segEditId=null;">Отмена</button>`;
+  const detail = $('statsDetail');
+  if (detail) detail.insertBefore(host, detail.children[1]);
+  host.scrollIntoView({ block: 'nearest' });
+}
+
+async function saveSegEdit() {
+  if (!segEditId || !myShiftDetailId) { msg('Нет отрезка для правки'); return; }
+  const from = $('segEFrom').value.trim();
+  const to = $('segETo').value.trim();
+  const kmAtB = parseFloat(String($('segEOdo').value).replace(',', '.'));
+  const km = parseFloat(String($('segEKm').value).replace(',', '.'));
+  if (!from || !to || isNaN(kmAtB) || kmAtB < 0 || isNaN(km) || km < 0) {
+    msg('Заполни все поля; значения — не отрицательные');
+    return;
+  }
+  msg('Сохраняю отрезок…');
+  const r = await sendOrQueue([{
+    id: 'sge-' + uid(), type: 'segmentedit', id: segEditId, // id записи — ключ правки
+    from: from, to: to, kmAtB: kmAtB, segmentKm: km
+  }]);
+  msg(r.sent ? 'Отрезок сохранён' : 'Нет сети: правка в очереди, уйдёт при синхронизации');
+  openMyShiftDetail(myShiftDetailId);
+}
+
+// Правка перевозки: форма подставляется в карточку строки
+let docEditRecId = null;
+
+function editDocRow(recordId, doctor, place, timeApp, timeBoard) {
+  docEditRecId = recordId;
+  const host = document.createElement('div');
+  host.id = 'docEditCard';
+  host.className = 'ref-item';
+  host.innerHTML = `
+    <b>Правка перевозки</b>
+    <label>Врач</label><input id="docEDoctor" value="${esc(doctor)}">
+    <label>Куда везём</label><input id="docEPlace" value="${esc(place)}">
+    <label>Назначенное время</label><input id="docETimeApp" type="time" value="${esc(timeApp)}">
+    <label>Время посадки</label><input id="docETimeBoard" type="time" value="${esc(timeBoard)}">
+    <button class="small" onclick="saveDocRowEdit()">Сохранить</button>
+    <button class="small" onclick="document.getElementById('docEditCard').remove();docEditRecId=null;">Отмена</button>`;
+  const detail = $('statsDetail');
+  if (detail) detail.appendChild(host);
+  host.scrollIntoView({ block: 'nearest' });
+}
+
+async function saveDocRowEdit() {
+  if (!docEditRecId || !myShiftDetailId) { msg('Нет перевозки для правки'); return; }
+  const doctor = $('docEDoctor').value.trim();
+  const place = $('docEPlace').value.trim();
+  const ta = $('docETimeApp').value;
+  const tb = $('docETimeBoard').value;
+  if (!doctor || !place || !ta || !tb) { msg('Укажи врача, пункт и оба времени'); return; }
+  msg('Сохраняю перевозку…');
+  const r = await sendOrQueue([{
+    id: 'doce-' + uid(), type: 'doctorsedit', recordId: docEditRecId,
+    doctor: doctor, place: place, timeAppointed: ta, timeBoarding: tb
+  }]);
+  msg(r.sent ? 'Перевозка сохранена' : 'Нет сети: правка в очереди, уйдёт при синхронизации');
+  openMyShiftDetail(myShiftDetailId);
+}
+
 // ================= СТАТИСТИКА (СТАРШИЙ) =================
+// Общий дашборд по всем водителям — остаётся у старшего
 async function openReport() {
   if (!me || !isSupervisor(me)) return;
   showScreen('reportScreen');
@@ -724,7 +925,7 @@ function escJsName(s) {
 
 function renderReport() {
   const month = $('reportMonth').value || todayISO().slice(0, 7);
-  const rows = shiftsData.filter(s => String(s.date || '').startsWith(month));
+  const rows = shiftsData.filter(s => isoOf(s.date).startsWith(month));
   $('backBtn').style.display = reportDetail ? 'block' : 'none';
 
   if (reportDetail) { renderDriverDetail(rows); return; }
@@ -996,37 +1197,30 @@ function startShift() {
   const odo = parseFloat($('odoStart').value.replace(',', '.'));
   if (!me) { msg('Сначала войди'); return; }
   if (!dateStr || !tStart) { msg('Укажи дату и время начала смены'); return; }
-  const carLabelVal = currentCarLabel();
-  if (!carLabelVal) { msg('Выбери автомобиль'); return; }
-  const carObj = (me.cars || []).find(c => carLabel(c) === carLabelVal);
-  if (!carObj) { msg('Выбери автомобиль'); return; }
+  const car = currentCar();
+  if (!car) { msg('Выбери автомобиль'); return; }
   if (isNaN(odo) || odo < 0) { msg('Укажи одометр на начало'); return; }
   shift = {
     id: uid(),
     driverId: me.fio,
-    carId: me.fio + '|' + carLabelVal,
-    carLabel: carLabelVal,
+    // carId — id авто с листа Cars; для несинхронизированного авто — метка
+    carId: car.id || (me.id + '|' + carLabel(car)),
+    carLabel: carLabel(car),
     date: dateStr, timeStart: tStart, odoStart: odo
   };
   segments = [];
   doctorVisits = [];
-  // последний выбор типа маршрута переносится в новую смену
-  $('segType').value = localStorage.getItem(LAST_SEG_KEY) === 'inter' ? 'inter' : 'city';
-  localStorage.setItem('lastCar', carLabelVal);
+  localStorage.setItem('lastCarId', car.id || carLabel(car));
   saveState();
   showWork();
   $('segFrom').value = 'ОФИС';
   $('segTo').value = ''; $('segKm').value = '';
-  msg(`Смена открыта: ${me.fio}, ${carLabelVal}.`);
+  msg(`Смена открыта: ${me.fio}, ${carLabel(car)}.`);
 }
 
 function addSegment() {
-  const segType = $('segType').value;
-  // Городской — список Points, междугородний — InterPoints
-  const refList = segType === 'inter' ? interPoints : points;
-  const refType = segType === 'inter' ? 'interpoint' : 'point';
-  const from = canonName($('segFrom').value, refList);
-  const to = canonName($('segTo').value, refList);
+  const from = canonName($('segFrom').value, points.concat(interPoints));
+  const to = canonName($('segTo').value, points.concat(interPoints));
   const km = parseFloat(String($('segKm').value).replace(',', '.'));
   if (!from || !to || isNaN(km) || km < 0) { msg('Заполни «Откуда», «Куда» и пробег'); return; }
   const prevKm = segments.length ? segments[segments.length - 1].kmAtB : 0;
@@ -1035,17 +1229,19 @@ function addSegment() {
     return;
   }
   const segmentKm = km - prevKm;
-  const routeType = segType === 'city'
-    ? 'Город'
-    : ((from === 'ОФИС' || to === 'ОФИС' || from === to) ? 'Город' : 'Трасса');
-  segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, routeType, segType, ts: new Date().toISOString() });
-  // Новые точки уходят в свой справочник: городской — Points, междугородний — InterPoints
+  // Тип маршрута ушли: один пробег, без деления на город/трассу
+  segments.push({ id: uid(), shiftId: shift.id, from, to, kmAtB: km, segmentKm, ts: new Date().toISOString() });
+  // Новые точки уходят в общий справочник: точку определяем по «интер»-листу,
+  // если она там есть, иначе — в Points
+  const refType = interPoints.indexOf(from) !== -1 || interPoints.indexOf(to) !== -1
+    ? 'interpoint' : 'point';
+  const refList = refType === 'interpoint' ? interPoints : points;
   rememberRef(refList, refType, from);
   rememberRef(refList, refType, to);
   saveState();
   $('segFrom').value = to; $('segTo').value = ''; $('segKm').value = '';
   // «Всего» = показание одометра, которое только что ввёл водитель (km)
-  msg(`Отрезок: ${from} → ${to}, ${segmentKm} км (${routeType}).\nВсего: ${segments.length} отрезк., всего ${km} км.`);
+  msg(`Отрезок: ${from} → ${to}, ${segmentKm} км.\nВсего: ${segments.length} отрезк., всего ${km} км.`);
 }
 
 function addDoctorVisit() {
@@ -1077,8 +1273,6 @@ async function finishShift() {
   if (!tEnd) { msg('Укажи время окончания смены'); return; }
   const refuel = $('refuel').value ? parseFloat($('refuel').value.replace(',', '.')) : '';
   const totalKm = segments.reduce((s, x) => s + x.segmentKm, 0);
-  const cityKm = segments.filter(s => s.routeType === 'Город').reduce((a, s) => a + s.segmentKm, 0);
-  const highwayKm = segments.filter(s => s.routeType === 'Трасса').reduce((a, s) => a + s.segmentKm, 0);
   const odoEnd = Number(shift.odoStart) + totalKm;
 
   const visitedPoints = [];
@@ -1095,7 +1289,7 @@ async function finishShift() {
   const dMin = durationMin(shift.timeStart, tEnd);
 
   const batch = [
-    { ...shift, timeEnd: tEnd, odoEnd, totalKm, cityKm, highwayKm,
+    { ...shift, timeEnd: tEnd, odoEnd, totalKm,
       route: route, doctor: doctorInfo,
       duration: minToHHMM(dMin), durationMin: dMin,
       refuel: refuel, status: 'Завершено', type: 'shift' },
@@ -1126,7 +1320,7 @@ async function finishShift() {
     id: batch[0].id, // нужен для скачивания путевого листа сразу после сдачи смены
     date: batch[0].date, driverId: batch[0].driverId,
     carLabel: batch[0].carLabel, timeStart: batch[0].timeStart, timeEnd: tEnd,
-    totalKm: String(totalKm), cityKm: String(cityKm), highwayKm: String(highwayKm),
+    totalKm: String(totalKm),
     refuel: refuel === '' ? '' : String(refuel),
     duration: minToHHMM(dMin), durationMin: dMin,
     doctor: doctorInfo, route: route
@@ -1142,9 +1336,6 @@ function restoreState() {
   shift = saved.shift;
   segments = saved.segments || [];
   doctorVisits = saved.doctorVisits || [];
-  $('segType').value = saved.segType === 'inter' ? 'inter' : 'city';
-  // тип восстановленной смены становится «последним выбранным»
-  localStorage.setItem(LAST_SEG_KEY, $('segType').value);
   if (segments.length) {
     const last = segments[segments.length - 1];
     $('segFrom').value = last.to;
@@ -1168,7 +1359,6 @@ function showRestoredShiftInfo() {
     : '\nОтрезков пока нет.';
   msg(`Смена ещё открыта: ${shift.driverId}, ${shift.carLabel}.\nОтрезков: ${segments.length}, общий пробег: ${totalKm} км.${lastInfo}\nОткрой «Запись смены», чтобы продолжить.`);
 }
-
 // ================= PWA =================
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -1182,14 +1372,21 @@ const PL_EMAIL_KEY = 'plEmail';
 function plIso(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-function ruFmtShort(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
-  return m ? m[3] + '.' + m[2] + '.' + m[1] : String(iso || '');
+
+// Показ даты: сервер отдаёт ДД.ММ.ГГГГ, старые кэши могут держать ISO —
+// приводим к единому виду ДД.ММ.ГГГГ
+function ruFmtShort(dateStr) {
+  const dmy = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(dateStr || '').trim());
+  if (dmy) return dateStr;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || '').trim());
+  return m ? m[3] + '.' + m[2] + '.' + m[1] : String(dateStr || '');
 }
 
 // Границы периода: неделя с понедельника, месяц — календарный
 function plPeriodRange(dateStr, kind) {
-  const d = new Date(dateStr + 'T00:00:00');
+  // Вход и для «28.10.2026», и для «2026-10-28» — приводим к ISO
+  const iso = isoOf(dateStr);
+  const d = new Date(iso + 'T00:00:00');
   if (isNaN(d)) return null;
   if (kind === 'week') {
     const off = (d.getDay() + 6) % 7;
@@ -1202,7 +1399,7 @@ function plPeriodRange(dateStr, kind) {
     const t = new Date(d.getFullYear(), d.getMonth() + 1, 0);
     return { from: plIso(f), to: plIso(t) };
   }
-  return { from: dateStr, to: dateStr };
+  return { from: iso, to: iso };
 }
 
 function plShifts() {
@@ -1210,9 +1407,9 @@ function plShifts() {
   if (!r) return [];
   const scope = $('plScope').value;
   return shiftsData
-    .filter(s => String(s.date || '') >= r.from && String(s.date || '') <= r.to)
+    .filter(s => isoOf(s.date) >= r.from && isoOf(s.date) <= r.to)
     .filter(s => scope === 'all' || normFio(s.driverId) === normFio(me.fio))
-    .sort((a, b) => ruCmp(a.date, b.date) || ruCmp(a.timeStart, b.timeStart));
+    .sort((a, b) => isoOf(a.date) < isoOf(b.date) ? -1 : 1);
 }
 
 function openPl() {
@@ -1220,7 +1417,7 @@ function openPl() {
   if (!$('plDate').value) $('plDate').value = todayISO();
   $('plEmail').value = localStorage.getItem(PL_EMAIL_KEY) || '';
   $('plScopeRow').style.display = isSupervisor(me) ? 'block' : 'none';
-  plRenderNumInto('plNumBlock');
+  plRenderNumInto('plNumBlock', 'pl');
   plRenderList();
 }
 
@@ -1231,7 +1428,7 @@ function plFmtNum(prefix, n) {
 
 // Блок нумерации путевых листов. Рендерится в двух местах:
 // экран «Путевые листы» (plNumBlock) и «Настройки» (setPlBlock).
-// ctx отличает input-идентификаторы, чтобы блоки не мешали друг другу.
+// ctx отличает input-идентификаторы, чтобы блоки не мешали друг другу
 function plRenderNumInto(elId, ctx) {
   ctx = ctx || (elId === 'setPlBlock' ? 'set' : 'pl');
   const el = $(elId);
@@ -1262,7 +1459,7 @@ async function plNumSave(ctx) {
   if (!prefix) { msg('Укажи префикс (например, АТС10)'); return; }
   if (isNaN(num) || num < 1) { msg('Номер — целое число от 1'); return; }
   msg('Сохраняю номер…');
-  const r = await sendOrQueue([{ id: 'pln-' + uid(), type: 'plnumset', fio: me.fio, prefix: prefix, num: num }]);
+  const r = await sendOrQueue([{ id: 'pln-' + uid(), type: 'plnumset', driverId: me.id, fio: me.fio, prefix: prefix, num: num }]);
   // Локально обновляем сразу: правка применится и офлайн-очередью
   const found = drivers.find(x => normFio(x.fio) === normFio(me.fio));
   if (found) { found.plPrefix = prefix; found.plNum = String(num); }
@@ -1376,7 +1573,7 @@ async function init() {
   if (auth && auth.fio) {
     const d = drivers.find(x => normFio(x.fio) === normFio(auth.fio));
     if (d) {
-      enterApp(d.fio, d.role || '');
+      enterApp(d.fio, d.role || '', d.id || '');
     } else {
       showScreen('loginScreen');
     }
@@ -1387,7 +1584,6 @@ async function init() {
   if (!restored) {
     const saved = parseFloat(localStorage.getItem('lastOdoEnd'));
     if (!isNaN(saved) && saved > 0) $('odoStart').value = saved;
-    $('segType').value = localStorage.getItem(LAST_SEG_KEY) === 'inter' ? 'inter' : 'city';
     $('shiftDate').value = todayISO();
   }
 }
