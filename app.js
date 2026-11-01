@@ -25,7 +25,8 @@ let interPoints = [];
 let medPoints = []; // «Куда везём врача» — лист MedPoints
 let docNames = [];
 let drivers = [];
-let carsRef = [];        // все авто с листа Cars: { id, driverId, own, name, plate, row }
+let carsRef = [];
+let carsByFio = {};
 let carEditMode = null;  // 'new' | 'edit'
 let carEditId = null;    // id авто на листе Cars (или null)
 let shiftsData = [];
@@ -47,15 +48,12 @@ const carLabel = c => (((c && c.name) || '') + ' ' + ((c && c.plate) || '')).tri
 
 // Личное авто видит только владелец (или авто без владельца), рабочее — все
 function myCars(m) {
-  const did = (m && m.id) || '';
   const seen = {};
   const out = [];
-  carsRef.forEach(c => {
-    // дубли (рабочие авто повторяются в списке каждого водителя) — по одному разу
+  (carsByFio[normFio(m && m.fio)] || []).forEach(c => {
+    // дубли (рабочие авто повторяются у каждого) — по одному разу
     if (c.id) { if (seen[c.id]) return; seen[c.id] = true; }
-    // рабочие (j-) — всем; личные — только тому, к кому привязаны
-    const isWork = String(c.id || '').startsWith('j-');
-    if (isWork || c.driverId === did) out.push(c);
+    out.push(c);
   });
   return out;
 }
@@ -317,13 +315,17 @@ function applyRefs(data) {
   drivers = Array.isArray(data.drivers) ? data.drivers : [];
   drivers.sort((a, b) => ruCmp(a.fio, b.fio));
 
-  // Машины лежат вложенными в каждого водителя (drivers[].cars),
-  // а не отдельным массивом в снимке. Собираем их в плоский список
-  // и приводим поле personal (с сервера) к own ('личная'), которое ждёт фронт.
+  // Личные машины лежат в массиве своего владельца (без driverId внутри записи),
+  // рабочие (j-) сервер дублирует в список каждого. Храним списки по ФИО водителя
+  // + плоский список для совместимости; поле personal (с сервера) приводим к own.
   carsRef = [];
-  drivers.forEach(d => (d.cars || []).forEach(c =>
-    carsRef.push(Object.assign({}, c, { own: c.own || (c.personal ? 'личная' : '') }))
-  ));
+  carsByFio = {};
+  drivers.forEach(d => {
+    const list = (d.cars || []).map(c =>
+      Object.assign({}, c, { own: c.own || (c.personal ? 'личная' : '') }));
+    carsByFio[normFio(d.fio)] = list;
+    list.forEach(c => carsRef.push(c));
+  });
 
   if (Array.isArray(data.points) && data.points.length) {
     points = Array.from(new Set(['ОФИС'].concat(data.points)));
