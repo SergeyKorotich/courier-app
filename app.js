@@ -354,11 +354,6 @@ async function loadDrivers() {
   }
   flushQueue();
 }
-// Подпись автомобиля в списках: «марка номер» — как в carLabel смены
-function carLabel(c) {
-  if (!c) return '';
-  return [c.name || c.car || '', c.plate || ''].join(' ').trim();
-}
 
 function renderCars() {
   if (!me) return;
