@@ -803,12 +803,19 @@ async function openMyShiftDetail(shiftId) {
   msg('Загружаю отрезки и перевозки…');
   let segs = [], docs = [];
   try {
-    const out = await (await fetch(API_URL + '?page=data&ids=' + encodeURIComponent(shiftId))).json();
+    const res = await fetch(API_URL + '?page=data&ids=' + encodeURIComponent(shiftId));
+    let out = null;
+    try { out = await res.json(); }
+    catch (e) { msg('Сервер вернул не JSON (HTTP ' + res.status + ')'); return; }
     if (!out.ok) { msg('Ошибка: ' + (out.error || 'сервер')); return; }
-    segs = out.segments[shiftId] || [];
+    segs = (out.segments && out.segments[shiftId]) || [];
     docs = (out.doctors && out.doctors[shiftId]) || [];
+    if (out.segments === undefined) {
+      msg('Сервер не вернул segments — проверь обработчик page=data на сервере');
+      return;
+    }
   } catch (e) {
-    msg('Нет сети: попробуй позже');
+    msg('Сбой запроса: ' + (e.message || e));
     return;
   }
   // Пробег пересчитываем по отрезкам — так сразу видно результат правок
