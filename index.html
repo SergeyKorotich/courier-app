@@ -100,6 +100,17 @@
     }
     .topbar button { width: auto; margin: 0; padding: 8px 14px; font-size: 14px; }
     .topbar .title { font-weight: 600; }
+        /* Своя подсказка полей: фильтр строго по началу названия */
+    .ac-wrap { position: relative; }
+    .ac-list {
+      position: absolute; z-index: 50; left: 0; right: 0;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; margin-top: 2px;
+      max-height: 220px; overflow-y: auto; display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+    .ac-item { padding: 8px 10px; cursor: pointer; font-size: 15px; }
+    .ac-item:hover { background: var(--chip); }
   </style>
 </head>
 <body>
@@ -119,8 +130,10 @@
 
       <div id="loginPanel">
         <label>ФИО</label>
-        <input id="loginFio" list="loginFioList" placeholder="Иванов Иван Иванович">
-        <datalist id="loginFioList"></datalist>
+        <div class="ac-wrap">
+          <input id="loginFio" placeholder="Иванов Иван Иванович">
+          <div class="ac-list" id="loginFioAc"></div>
+        </div>
         <label>PIN</label>
         <input id="loginPin" type="password" inputmode="numeric" placeholder="PIN">
         <button onclick="doLogin()">Войти</button>
@@ -187,7 +200,7 @@
 
     <!-- Активная смена -->
     <div id="shiftCard" style="display:none">
-      <div class="card">
+            <div class="card">
         <h2>Отрезок маршрута</h2>
         <label>Откуда</label>
         <div class="ac-wrap">
@@ -208,17 +221,22 @@
       <div id="docCard" class="card" style="display:none">
         <h2>Перевозка врача</h2>
         <label>Врач</label>
-        <input id="docName" list="docNamesList">
-        <datalist id="docNamesList"></datalist>
+        <div class="ac-wrap">
+          <input id="docName">
+          <div class="ac-list" id="docNameAc"></div>
+        </div>
         <label>Куда везём</label>
-        <input id="docPlace" list="docPlaceList">
-        <datalist id="docPlaceList"></datalist>
+        <div class="ac-wrap">
+          <input id="docPlace">
+          <div class="ac-list" id="docPlaceAc"></div>
+        </div>
         <div class="row">
           <div><label>Назначено</label><input id="docTimeApp" type="time"></div>
           <div><label>Посадка</label><input id="docTimeBoard" type="time"></div>
         </div>
         <button onclick="addDoctorVisit()">Записать перевозку</button>
       </div>
+
 
       <!-- Завершение смены -->
       <div id="finishCard" class="card" style="display:none">
@@ -366,7 +384,6 @@
       <button onclick="saveDrvForm()">Сохранить</button>
       <button class="secondary" onclick="closeDrvForm()">Отмена</button>
     </div>
-
 
     <!-- Форма врача -->
     <div id="docFormCard" class="card" style="display:none">

@@ -172,10 +172,8 @@ function showAuthTab(which) {
   $('regPanel').style.display = which === 'reg' ? 'block' : 'none';
 }
 
-function renderLoginHints() {
-  $('loginFioList').innerHTML = drivers
-    .map(d => `<option value="${esc(d.fio)}">`).join('');
-}
+// Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
+function renderLoginHints() {}
 
 async function doLogin() {
   const fio = $('loginFio').value.trim();
@@ -483,21 +481,58 @@ function selectCarById(id) {
 
 // Подсказки «Откуда/Куда» — единый список точек:
 // деление город/междугородний ушло вместе с типом маршрута
-function renderSegPoints() {
-  if (!$('segPointsList')) return;
-  const src = Array.from(new Set(points.concat(interPoints)));
-  $('segPointsList').innerHTML = src.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
+
+// Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
+function renderSegPoints() {}
+
+// ============ ПОДСКАЗКИ ПОЛЕЙ: строго по началу названия ============
+// Единый механизм для всех полей с подсказками — вместо <datalist>,
+// который браузер фильтрует по вхождению в любом месте.
+// Пустой ввод — списка нет; свободный текст разрешён везде,
+// где он был разрешён раньше (canonName приводит его к канону)
+function acFilterPrefixed(list, q) {
+  const s = String(q || '').trim().toLowerCase();
+  if (!s) return [];
+  return list.filter(p => String(p).toLowerCase().indexOf(s) === 0).slice(0, 20);
 }
 
-// ============ ПОДСКАЗКИ ТОЧЕК: строго по началу названия ============
-// Нативный <datalist> фильтрует по вхождению в любом месте — это
-// поведение браузера, его не изменить. Свои списки: показываем только
-// точки, НАЧИНАЮЩИЕСЯ на набранные буквы (регистр не важен). Пустой
-// ввод — списка нет, свободный текст по-прежнему разрешён (canonName
-// приводит его к каноническому виду при записи отрезка)
-function segPointsAll() {
-  return Array.from(new Set(points.concat(interPoints))).sort(ruCmp);
+function attachPrefixAc(inputId, listId, getList) {
+  const input = $(inputId), box = $(listId);
+  if (!input || !box) return;
+  const render = () => {
+    const items = acFilterPrefixed(getList(), input.value);
+    if (!items.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.innerHTML = items.map(p => `<div class="ac-item">${esc(p)}</div>`).join('');
+    box.style.display = 'block';
+    Array.prototype.forEach.call(box.children, el => {
+      // mousedown вместо click: срабатывает раньше blur и не теряет выбор
+      el.addEventListener('mousedown', ev => {
+        ev.preventDefault();
+        input.value = el.textContent;
+        box.style.display = 'none';
+      });
+    });
+  };
+  input.addEventListener('input', render);
+  input.addEventListener('focus', render);
+  input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 150));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') box.style.display = 'none'; });
 }
+
+// Источники списков — читают живые массивы: новая точка, врач или
+// зарегистрированный водитель появляются в подсказках сразу
+const acSegPoints  = () => Array.from(new Set(points.concat(interPoints))).sort(ruCmp);
+const acDocNames   = () => docNames.slice().sort(ruCmp);
+const acMedPoints  = () => medPoints.slice().sort(ruCmp);
+const acDriverFios = () => drivers.map(d => d.fio).sort(ruCmp);
+
+// Подключение полей — по одной строке на поле (ссылка на правило выше).
+// Элементы есть в DOM сразу: скрипт в конце body, экраны лишь скрыты
+attachPrefixAc('loginFio', 'loginFioAc', acDriverFios);
+attachPrefixAc('segFrom',  'segFromAc',  acSegPoints);
+attachPrefixAc('segTo',    'segToAc',    acSegPoints);
+attachPrefixAc('docName',  'docNameAc',  acDocNames);
+attachPrefixAc('docPlace', 'docPlaceAc', acMedPoints);
 
 function acFilterPrefixed(list, q) {
   const s = String(q || '').trim().toLowerCase();
@@ -536,14 +571,12 @@ attachPrefixAc('segFrom', 'segFromAc', segPointsAll);
 attachPrefixAc('segTo',   'segToAc',   segPointsAll);
 
 // Подсказки «Куда везём» — только MedPoints
-function renderDocPlaceList() {
-  if (!$('docPlaceList')) return;
-  $('docPlaceList').innerHTML = medPoints.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
-}
-function renderDocNames() {
-  if (!$('docNamesList')) return;
-  $('docNamesList').innerHTML = docNames.slice().sort(ruCmp).map(p => `<option value="${esc(p)}">`).join('');
-}
+
+// Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
+function renderDocPlaceList() {}
+
+// Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
+function renderDocNames() {}
 
 function onCarChange() {
   if ($('carSel').value === '__new') {
