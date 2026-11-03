@@ -36,6 +36,24 @@ function fmtVu(v) {
   return out;
 }
 
+// Телефон собственника: только цифры, максимум 11, вид «+7 (912) 345-67-89».
+// «8 …» и 10 цифр без кода страны приводим к +7; пусто — можно
+function fmtPhone(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 10) d = '7' + d;        // без кода страны → +7
+  if (d[0] === '8') d = '7' + d.slice(1);  // 8 → +7
+  if (d.length > 11) d = d.slice(0, 11);
+  const rest = d.slice(1);
+  let out = '+' + d[0];
+  if (rest.length) out += ' (' + rest.slice(0, Math.min(3, rest.length));
+  if (rest.length >= 3) out += ')';
+  if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+  if (rest.length > 6) out += '-' + rest.slice(6, 8);
+  if (rest.length > 8) out += '-' + rest.slice(8, 10);
+  return out;
+}
+
 // Приводит дату любого известного формата к ISO (ГГГГ-ММ-ДД) — для type="date"
 // Из любого формата даты в ISO «2020-02-15» — для input type="date"
 function isoFromAny(s) {
@@ -553,7 +571,8 @@ function openCarPanel(mode, id) {
     $('carOwnInput').value = c.own || 'личная';
     $('carOwnerInput').value = c.owner || '';
     $('carAddrInput').value = c.addr || '';
-    $('carTelInput').value = c.tel || '';
+    // Телефон собственника приводим к маске «+7 (ххх) ххх-хх-хх»
+    $('carTelInput').value = c.tel ? fmtPhone(c.tel) : '';
     $('carOgrnInput').value = c.ogrn || '';
   } else {
     $('carNameInput').value = '';
@@ -578,9 +597,15 @@ async function saveCar() {
   const own = ($('carOwnInput') ? $('carOwnInput').value : 'личная').trim() || 'личная';
   const owner = $('carOwnerInput') ? $('carOwnerInput').value.trim() : '';
   const addr = $('carAddrInput') ? $('carAddrInput').value.trim() : '';
-  const tel = $('carTelInput') ? $('carTelInput').value.trim() : '';
+  // Телефон собственника в каноническом виде «+7 (912) 345-67-89»
+  const tel = fmtPhone($('carTelInput') ? $('carTelInput').value.trim() : '');
   const ogrn = $('carOgrnInput') ? $('carOgrnInput').value.trim() : '';
   if (!car || !plate) { msg('Укажи марку и госномер'); return; }
+  // Пусто — можно; неполный номер — просим дозаполнить (как СНИЛС/ВУ)
+  if (tel && tel.replace(/\D/g, '').length !== 11) {
+    msg('Телефон: нужно 11 цифр, формат +7 (ххх) ххх-хх-хх');
+    return;
+  }
   const label = car + ' ' + plate;
   msg('Сохраняю автомобиль…');
   // В смене с отрезками сменить авто нельзя: одометр начала привязан к конкретной машине
@@ -854,7 +879,7 @@ function renderMyStats() {
   });
   const list = rows.map(s => `
     <div class="ref-item">
-      <b>${esc(s.date)}</b> — ${esc(s.carLabel || '')}
+      <b>${esc(ruFmtShort(s.date))}</b> — ${esc(s.carLabel || '')}
       <a class="edit" href="#" onclick="openMyShiftDetail('${escJsName(s.id)}');return false">✎ отрезки и врачи</a><br>
       ${esc(s.timeStart || '')}–${esc(s.timeEnd || '')}, км: ${esc(s.totalKm || 0)},
       ${minToHHMM(shiftMinutes(s))}${s.refuel ? ', заправка ' + esc(s.refuel) + ' л' : ''}
@@ -955,7 +980,7 @@ async function saveSegEdit() {
   }
   msg('Сохраняю отрезок…');
   const r = await sendOrQueue([{
-    id: 'sge-' + uid(), type: 'segmentedit', id: segEditId, // id записи — ключ правки
+    id: 'sge-' + uid(), type: 'segmentedit', segId: segEditId,
     from: from, to: to, kmAtB: kmAtB, segmentKm: km
   }]);
   msg(r.sent ? 'Отрезок сохранён' : 'Нет сети: правка в очереди, уйдёт при синхронизации');
@@ -1081,7 +1106,7 @@ function renderDriverDetail(rows) {
   }
   const list = rows2.map(s => `
     <div class="card">
-      <b>${esc(s.date)}</b> — ${esc(s.carLabel || '')}
+      <b>${esc(ruFmtShort(s.date))}</b> — ${esc(s.carLabel || '')}
       <div>${s.timeStart || ''}–${s.timeEnd || ''} (${s.duration || minToHHMM(shiftMinutes(s))}), км: ${s.totalKm || 0}${s.refuel ? `, заправка ${s.refuel} л` : ''}</div>
       <div style="font-size:13px;color:var(--muted)">Маршрут: ${esc(s.route || '—')}</div>
       ${s.doctor ? `<div style="font-size:13px;color:var(--muted)">Врачи: ${esc(s.doctor)}</div>` : ''}
@@ -1367,6 +1392,10 @@ async function saveDrvForm() {
   const vuDate = ruFromIso($('drvVuDate').value);
   const klass = $('drvKlass').value.trim();
   if (!fio) { msg('Укажи ФИО'); return; }
+    // Единообразие с saveSettings: пусто — можно, неполные цифры — нельзя
+  const sn = snils.replace(/\D/g, ''), vv = vu.replace(/\D/g, '');
+  if (sn && sn.length !== 11) { msg('СНИЛС: нужно 11 цифр, сейчас ' + sn.length); return; }
+  if (vv && vv.length !== 10) { msg('ВУ номер: нужно 10 цифр, сейчас ' + vv.length); return; }
   const old = drvEditKey ? drivers.find(x => normFio(x.fio) === drvEditKey) : null;
   if (drvEditKey && !old) { msg('Водитель не найден'); return; }
   const changedFio = !old || normFio(old.fio) !== normFio(fio);

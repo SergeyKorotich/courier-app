@@ -284,7 +284,7 @@
         <label>Адрес собственника</label>
         <input id="carAddrInput">
         <label>Телефон собственника</label>
-        <input id="carTelInput" inputmode="tel">
+        <input id="carTelInput" inputmode="tel" oninput="this.value=fmtPhone(this.value)">
         <label>ОГРН / ОГРНИП</label>
         <input id="carOgrnInput" inputmode="numeric">
         <button id="setCarBtn" onclick="saveCar()">Добавить автомобиль</button>
