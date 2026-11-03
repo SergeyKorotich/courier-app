@@ -490,12 +490,6 @@ function renderSegPoints() {}
 // который браузер фильтрует по вхождению в любом месте.
 // Пустой ввод — списка нет; свободный текст разрешён везде,
 // где он был разрешён раньше (canonName приводит его к канону)
-function acFilterPrefixed(list, q) {
-  const s = String(q || '').trim().toLowerCase();
-  if (!s) return [];
-  return list.filter(p => String(p).toLowerCase().indexOf(s) === 0).slice(0, 20);
-}
-
 function attachPrefixAc(inputId, listId, getList) {
   const input = $(inputId), box = $(listId);
   if (!input || !box) return;
@@ -539,38 +533,6 @@ function acFilterPrefixed(list, q) {
   if (!s) return [];
   return list.filter(p => String(p).toLowerCase().indexOf(s) === 0).slice(0, 20);
 }
-
-// Подключает к полю свой выпадающий список. listId — контейнер .ac-list
-// рядом с полем (см. index.html)
-function attachPrefixAc(inputId, listId, getList) {
-  const input = $(inputId), box = $(listId);
-  if (!input || !box) return;
-  const render = () => {
-    const items = acFilterPrefixed(getList(), input.value);
-    if (!items.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    box.innerHTML = items.map(p => `<div class="ac-item">${esc(p)}</div>`).join('');
-    box.style.display = 'block';
-    Array.prototype.forEach.call(box.children, el => {
-      // mousedown вместо click: срабатывает раньше blur и не теряет выбор
-      el.addEventListener('mousedown', ev => {
-        ev.preventDefault();
-        input.value = el.textContent;
-        box.style.display = 'none';
-      });
-    });
-  };
-  input.addEventListener('input', render);
-  input.addEventListener('focus', render);
-  input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 150));
-  input.addEventListener('keydown', e => { if (e.key === 'Escape') box.style.display = 'none'; });
-}
-
-// Подключаем поля отрезков (элементы есть в DOM сразу — Work-экран
-// просто скрыт, тег создан при загрузке страницы)
-attachPrefixAc('segFrom', 'segFromAc', segPointsAll);
-attachPrefixAc('segTo',   'segToAc',   segPointsAll);
-
-// Подсказки «Куда везём» — только MedPoints
 
 // Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
 function renderDocPlaceList() {}
