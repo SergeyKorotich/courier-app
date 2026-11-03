@@ -255,11 +255,11 @@
       <label>ФИО</label>
       <input id="setFio" placeholder="Иванов Иван Иванович">
       <label>СНИЛС</label>
-      <input id="setSnils" placeholder="000-000-000 00">
+      <input id="setSnils" inputmode="numeric" placeholder="000-000-000 00" oninput="this.value=fmtSnils(this.value)">
       <label>Водительское удостоверение (ВУ) — номер</label>
-      <input id="setVu">
+      <input id="setVu" inputmode="numeric" placeholder="00 00 000000" oninput="this.value=fmtVu(this.value)">
       <label>ВУ — дата выдачи</label>
-      <input id="setVuDate" placeholder="12.05.2019">
+      <input id="setVuDate" type="date">
       <label>Класс</label>
       <input id="setKlass" placeholder="B, C…">
       <div id="setRoleBlock" style="display:none">
@@ -334,6 +334,38 @@
       <button class="secondary small" onclick="openClinicForm('add')">➕ Новая клиника</button>
       <div id="clsCard" style="display:none"><div id="refsCls"></div></div>
     </div>
+
+    <div class="card" id="drvCardWrap" style="display:none">
+      <h2>Водители</h2>
+      <input id="refSearchDrv" placeholder="Введите первые буквы ФИО" oninput="renderRefsDrv()">
+      <button id="clearDrvBtn" style="display:none" class="secondary small" onclick="clearRefSearch('drv')">Очистить</button>
+      <button class="secondary small" onclick="openDrvForm('add')">➕ Новый водитель</button>
+      <div id="drvCard" style="display:none"><div id="refsDrv"></div></div>
+    </div>
+
+    <!-- Форма водителя -->
+    <div id="drvFormCard" class="card" style="display:none">
+      <h3 id="drvFormTitle"></h3>
+      <label>ФИО</label>
+      <input id="drvFio" placeholder="Иванов Иван Иванович">
+      <label>Роль</label>
+      <input id="drvRole" placeholder="пусто — обычный; «старший» — статистика всех">
+      <div id="drvPinBlock">
+        <label>PIN (4–8 цифр) — сообщи водителю</label>
+        <input id="drvPin" type="password" inputmode="numeric" placeholder="PIN">
+      </div>
+      <label>СНИЛС</label>
+      <input id="drvSnils" inputmode="numeric" placeholder="000-000-000 00" oninput="this.value=fmtSnils(this.value)">
+      <label>ВУ — номер</label>
+      <input id="drvVu" inputmode="numeric" placeholder="00 00 000000" oninput="this.value=fmtVu(this.value)">
+      <label>ВУ — дата выдачи</label>
+      <input id="drvVuDate" type="date">
+      <label>Класс</label>
+      <input id="drvKlass" placeholder="B, C…">
+      <button onclick="saveDrvForm()">Сохранить</button>
+      <button class="secondary" onclick="closeDrvForm()">Отмена</button>
+    </div>
+
 
     <!-- Форма врача -->
     <div id="docFormCard" class="card" style="display:none">

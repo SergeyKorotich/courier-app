@@ -16,6 +16,42 @@ function isoOf(dateStr) {
   return m ? m[3] + '-' + m[2] + '-' + m[1] : String(dateStr || '');
 }
 
+// ================= ФОРМАТЕРЫ ПОЛЕЙ =================
+// СНИЛС: только цифры, максимум 11, вид «073-006-224 14»
+function fmtSnils(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 11);
+  let out = d.slice(0, 3);
+  if (d.length > 3) out += '-' + d.slice(3, 6);
+  if (d.length > 6) out += '-' + d.slice(6, 9);
+  if (d.length > 9) out += ' ' + d.slice(9, 11);
+  return out;
+}
+
+// ВУ номер: только цифры, максимум 10, вид «18 16 523567»
+function fmtVu(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 10);
+  let out = d.slice(0, 2);
+  if (d.length > 2) out += ' ' + d.slice(2, 4);
+  if (d.length > 4) out += ' ' + d.slice(4, 10);
+  return out;
+}
+
+// Приводит дату любого известного формата к ISO (ГГГГ-ММ-ДД) — для type="date"
+function isoFromAny(s) {
+  const t = String(s || '').trim();
+  if (!t) return '';
+  const dmy = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(t);
+  if (dmy) return dmy[3] + '-' + dmy[2] + '-' + dmy[1];
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  return iso ? iso[1] + '-' + iso[2] + '-' + iso[3] : '';
+}
+
+// ISO (ГГГГ-ММ-ДД) → ДД.ММ.ГГГГ — формат хранения дат на сервере
+function ruFromIso(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  return m ? m[3] + '.' + m[2] + '.' + m[1] : '';
+}
+
 let me = null;
 let shift = null;
 let segments = [];
@@ -37,6 +73,7 @@ let clinics = [];
 // Формы справочника: null = добавление, ключ = правка
 let docEditKey = null;
 let clinicEditKey = null;
+let drvEditKey = null; // null = добавление, ключ = ФИО водителя в нижнем регистре
 
 const QUEUE_KEY = 'sendQueue';
 const REF_KEY = 'refCache';
@@ -458,7 +495,8 @@ function renderSettings() {
   $('setFio').value = me.fio;
   $('setSnils').value = found.snils || '';
   $('setVu').value = found.vu || '';
-  $('setVuDate').value = found.vuDate || '';
+  // type="date" принимает только ISO: хранимое ДД.ММ.ГГГГ конвертируем
+  $('setVuDate').value = isoFromAny(found.vuDate) || '';
   $('setKlass').value = found.klass || '';
   // Телефон в профиле водителя больше нет — это реквизит собственника авто (Cars)
   // Роль назначает только старший
@@ -579,11 +617,25 @@ async function saveSettings() {
   if (!me) { msg('Сначала войди'); return; }
   const fio = $('setFio').value.trim().replace(/\s+/g, ' ');
   if (!fio) { msg('Укажи ФИО'); return; }
+  // СНИЛС и ВУ приводим к каноническому виду и проверяем полноту:
+  // пусто — можно, неполные цифры — просим дозаполнить
+  const snilsRaw = $('setSnils').value.trim();
+  const vuRaw = $('setVu').value.trim();
+  const snils = fmtSnils(snilsRaw);
+  const vu = fmtVu(vuRaw);
+  if (snilsRaw && snilsRaw.replace(/\D/g, '').length !== 11) {
+    msg('СНИЛС: нужно 11 цифр, сейчас ' + snilsRaw.replace(/\D/g, '').length);
+    return;
+  }
+  if (vuRaw && vuRaw.replace(/\D/g, '').length !== 10) {
+    msg('ВУ номер: нужно 10 цифр, сейчас ' + vuRaw.replace(/\D/g, '').length);
+    return;
+  }
   const profile = {
     id: 'dpr-' + uid(), type: 'driverprofile', driverId: me.id, fioOld: me.fio,
-    snils: $('setSnils').value.trim(),
-    vu: $('setVu').value.trim(),
-    vuDate: $('setVuDate').value.trim(),
+    snils: snils,
+    vu: vu,
+    vuDate: ruFromIso($('setVuDate').value),
     klass: $('setKlass').value.trim()
   };
   if (isSupervisor(me)) profile.role = $('setRole').value.trim();
@@ -1029,19 +1081,30 @@ function openRefs() {
   showScreen('refsScreen');
   $('refSearchDoc').value = '';
   $('refSearchCls').value = '';
+  $('refSearchDrv').value = '';
   const cd = $('clearDocBtn'); if (cd) cd.style.display = 'none';
   const cc = $('clearClsBtn'); if (cc) cc.style.display = 'none';
+  const cdrv = $('clearDrvBtn'); if (cdrv) cdrv.style.display = 'none';
   $('docsCard').style.display = 'none';
   $('clsCard').style.display = 'none';
+  $('drvCard').style.display = 'none';
+  // Справочник водителей видит только старший
+  const drvWrap = $('drvCardWrap');
+  if (drvWrap) drvWrap.style.display = isSupervisor(me) ? 'block' : 'none';
   closeDocForm();
   closeClinicForm();
+  closeDrvForm();
 }
+
 
 // Сброс поля поиска справочника и перерисовка списка
 function clearRefSearch(which) {
   if (which === 'cls') {
     $('refSearchCls').value = '';
     renderRefsCls();
+  } else if (which === 'drv') {
+    $('refSearchDrv').value = '';
+    renderRefsDrv();
   } else {
     $('refSearchDoc').value = '';
     renderRefsDoc();
@@ -1217,6 +1280,105 @@ async function saveClinicForm() {
   const r = await sendOrQueue([rec]);
   msg(r.sent ? 'Клиника сохранена на сервере'
              : 'Нет сети: клиника сохранена в телефоне и уйдёт в таблицу при синхронизации');
+}
+
+// --- Водители: поиск, карточки с правкой (только старший) ---
+function renderRefsDrv() {
+  if (!me || !isSupervisor(me)) return;
+  const q = ($('refSearchDrv').value || '').trim().toLowerCase();
+  const cb = $('clearDrvBtn');
+  if (cb) cb.style.display = q ? 'block' : 'none';
+  if (!q) { $('drvCard').style.display = 'none'; return; }
+  const list = drivers
+    .filter(d => normFio(d.fio).indexOf(q) === 0)
+    .sort((a, b) => ruCmp(a.fio, b.fio));
+  $('drvCard').style.display = 'block';
+  $('refsDrv').innerHTML = list.length ? list.map(d => `
+    <div class="ref-item">
+      <b>${esc(d.fio)}</b>${d.role ? ' <span class="muted">(' + esc(d.role) + ')</span>' : ''}
+      <a class="edit" href="#" onclick="openDrvForm('edit','${escJsName(normFio(d.fio))}');return false">✎</a><br>
+      ${d.snils ? 'СНИЛС: ' + esc(d.snils) + '<br>' : ''}
+      ${d.vu ? 'ВУ: ' + esc(d.vu) + (d.vuDate ? ' от ' + esc(ruFmtShort(d.vuDate)) : '') + '<br>' : ''}
+      ${d.klass ? 'Класс: ' + esc(d.klass) : ''}
+    </div>`).join('')
+    : '<div class="ref-item empty">Водитель не найден.</div>';
+}
+
+// --- Форма водителя: добавление и правка ---
+function openDrvForm(mode, key) {
+  if (!me || !isSupervisor(me)) { msg('Справочник водителей — только для старшего'); return; }
+  drvEditKey = mode === 'edit' ? key : null;
+  const d = drvEditKey ? drivers.find(x => normFio(x.fio) === drvEditKey) : null;
+  if (drvEditKey && !d) { msg('Водитель не найден'); return; }
+  $('drvFormTitle').textContent = drvEditKey ? 'Правка водителя' : 'Новый водитель';
+  $('drvFio').value = d ? (d.fio || '') : '';
+  $('drvRole').value = d ? (d.role || '') : '';
+  // PIN назначается только при добавлении; при правке не показываем и не меняем
+  $('drvPin').value = '';
+  $('drvPinBlock').style.display = drvEditKey ? 'none' : 'block';
+  // СНИЛС и ВУ приводим к маске сразу, даже если в таблице лежали голыми цифрами
+  $('drvSnils').value = d && d.snils ? fmtSnils(d.snils) : '';
+  $('drvVu').value = d && d.vu ? fmtVu(d.vu) : '';
+  $('drvVuDate').value = d ? (isoFromAny(d.vuDate) || '') : '';
+  $('drvKlass').value = d ? (d.klass || '') : '';
+  $('drvFormCard').style.display = 'block';
+  $('drvCard').style.display = 'none';
+  $('docsCard').style.display = 'none';
+  $('clsCard').style.display = 'none';
+}
+
+function closeDrvForm() {
+  $('drvFormCard').style.display = 'none';
+  drvEditKey = null;
+}
+
+// Сохранение водителя: при добавлении — driver + PIN,
+// при правке — переименование (если ФИО изменилось), правка строки и профиль.
+// Офлайн: локальная правка + очередь, как у врачей и клиник
+async function saveDrvForm() {
+  if (!me || !isSupervisor(me)) { msg('Только старший правит водителей'); return; }
+  const fio = $('drvFio').value.trim().replace(/\s+/g, ' ');
+  const role = $('drvRole').value.trim();
+  const snils = fmtSnils($('drvSnils').value.trim());
+  const vu = fmtVu($('drvVu').value.trim());
+  const vuDate = ruFromIso($('drvVuDate').value);
+  const klass = $('drvKlass').value.trim();
+  if (!fio) { msg('Укажи ФИО'); return; }
+  const old = drvEditKey ? drivers.find(x => normFio(x.fio) === drvEditKey) : null;
+  if (drvEditKey && !old) { msg('Водитель не найден'); return; }
+  const changedFio = !old || normFio(old.fio) !== normFio(fio);
+  const recs = [];
+  if (!old) {
+    const pin = $('drvPin').value.trim();
+    if (!/^\d{4,8}$/.test(pin)) { msg('PIN: от 4 до 8 цифр'); return; }
+    // driver создаёт строку (с id из ФИО), driverprofile сразу заполняет профиль:
+    // записи в пакете обрабатываются по порядку, к моменту профиля строка уже есть
+    recs.push({ id: 'dwa-' + uid(), type: 'driver', fio: fio, pin: pin, role: role });
+  } else if (changedFio) {
+    recs.push({ id: 'dwr-' + uid(), type: 'driverrename', fioOld: old.fio, fio: fio });
+  }
+  if (old) {
+    recs.push({ id: 'dwe-' + uid(), type: 'driveredit',
+      id: old.id || '', fio: fio, role: role });
+  }
+  recs.push({ id: 'dwp-' + uid(), type: 'driverprofile',
+    fioOld: old ? old.fio : fio, fio: fio,
+    snils: snils, vu: vu, vuDate: vuDate, klass: klass, role: role });
+  // Локально применяем сразу — видно и без сети
+  if (old) {
+    old.fio = fio; old.role = role;
+    old.snils = snils; old.vu = vu; old.vuDate = vuDate; old.klass = klass;
+  } else {
+    drivers.push({ id: '', fio: fio, role: role,
+      snils: snils, vu: vu, vuDate: vuDate, klass: klass });
+  }
+  drivers.sort((a, b) => ruCmp(a.fio, b.fio));
+  closeDrvForm();
+  renderRefsDrv();
+  renderLoginHints();
+  const r = await sendOrQueue(recs);
+  msg(r.sent ? 'Водитель сохранён на сервере'
+             : 'Нет сети: водитель сохранён в телефоне и уйдёт в таблицу при синхронизации');
 }
 
 // ================= СМЕНА =================
