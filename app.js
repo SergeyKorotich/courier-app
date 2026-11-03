@@ -37,13 +37,14 @@ function fmtVu(v) {
 }
 
 // Приводит дату любого известного формата к ISO (ГГГГ-ММ-ДД) — для type="date"
+// Из любого формата даты в ISO «2020-02-15» — для input type="date"
 function isoFromAny(s) {
-  const t = String(s || '').trim();
-  if (!t) return '';
-  const dmy = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(t);
-  if (dmy) return dmy[3] + '-' + dmy[2] + '-' + dmy[1];
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
-  return iso ? iso[1] + '-' + iso[2] + '-' + iso[3] : '';
+  s = String(s || '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+  return '';
 }
 
 // ISO (ГГГГ-ММ-ДД) → ДД.ММ.ГГГГ — формат хранения дат на сервере
