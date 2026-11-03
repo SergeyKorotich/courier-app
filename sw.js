@@ -1,7 +1,7 @@
-// Увеличиваем версию только если меняем структуру самого SW (редко)
-const CACHE = 'kuryer-v37';
+// Увеличиваем версию при КАЖДОЙ правке этого файла или кэшируемой статики
+const CACHE = 'kuryer-v38';
 
-// ВАЖНО: app.js здесь НЕТ! Он не кэшируется, чтобы всегда быть свежим.
+// app.js здесь НЕТ — он грузится по сети (network-first)
 const ASSETS = [
   './',
   './index.html',
@@ -28,32 +28,42 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // POST запросы (синхронизация данных) всегда идут в сеть, мимо кэша
+  // POST-запросы (синхронизация) всегда в сеть, мимо кэша
   if (e.request.method !== 'GET') return;
 
   let url;
   try { url = new URL(e.request.url); } catch (err) { return; }
 
-  // Если запрос к чужому домену (API Google) — мимо кэша
+  // Чужие домены — мимо кэша
   if (url.origin !== self.location.origin) return;
 
   const path = url.pathname;
 
+  // HTML и JS — всегда сеть: свежесть важнее скорости.
+  // Свежий ответ кладём в кэш как офлайн-запас; при отсутствии сети — кэш
+  if (path === '/' || path.endsWith('/') || path.endsWith('index.html') || path.endsWith('app.js')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+        }
+        return res;
+      }).catch(() =>
+        caches.match(e.request).then(hit => {
+          if (hit) return hit;
+          // Честная ошибка вместо подмены: HTML нельзя отдавать как JS
+          throw new Error('Нет сети и нет кэша: ' + path);
+        })
+      )
+    );
+    return;
+  }
+
+  // Остальное (картинки, манифест) — Cache First
   e.respondWith(
-    // app.js — всегда сеть: свежесть важнее скорости.
-    // Без сети и без закэшированной копии отдаём index.html (приложение стартует,
-    // а сохранённая смена и очередь никуда не денутся)
-    (path.endsWith('app.js')
-      ? fetch(e.request).catch(() =>
-          caches.match('./index.html').then(res => {
-            if (res) return res;
-            throw new Error('No network and no cached app.js');
-          })
-        )
-      : // Для всего остального (html, картинки) — Cache First
-        caches.match(e.request).then(hit =>
-          hit || fetch(e.request).catch(() => caches.match('./index.html'))
-        )
+    caches.match(e.request).then(hit =>
+      hit || fetch(e.request).catch(() => new Response('', { status: 504 }))
     )
   );
 });
