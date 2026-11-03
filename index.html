@@ -190,10 +190,15 @@
       <div class="card">
         <h2>Отрезок маршрута</h2>
         <label>Откуда</label>
-        <input id="segFrom" list="segPointsList">
-        <datalist id="segPointsList"></datalist>
+        <div class="ac-wrap">
+          <input id="segFrom">
+          <div class="ac-list" id="segFromAc"></div>
+        </div>
         <label>Куда</label>
-        <input id="segTo" list="segPointsList">
+        <div class="ac-wrap">
+          <input id="segTo">
+          <div class="ac-list" id="segToAc"></div>
+        </div>
         <label>Одометр в пункте «Куда», км</label>
         <input id="segKm" inputmode="decimal" placeholder="показание одометра">
         <button onclick="addSegment()">Добавить отрезок</button>
