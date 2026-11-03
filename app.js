@@ -212,14 +212,26 @@ async function doRegister() {
         drivers.push({ id: out.driverId || '', fio: out.fio, role: '' });
         drivers.sort((a, b) => ruCmp(a.fio, b.fio));
       }
-      // Авто при регистрации — личное; на сервер уедет отдельной записью,
-      // локально показываем сразу
+      // Авто при регистрации — личная машина водителя: отдельная запись
+      // type: 'car' уходит на сервер (лист Cars), локально показываем сразу
+      let carSent = true;
       if (car || plate) {
+        const r2 = await sendOrQueue([{
+          id: 'car-' + uid(), type: 'car',
+          car: car, plate: plate, own: 'личная', driverId: out.driverId || ''
+        }]);
+        carSent = r2.sent;
         carsRef.push({ id: '', driverId: out.driverId || '', own: 'личная',
           name: car, plate: plate, row: null });
       }
       enterApp(out.fio, '', out.driverId || '');
-      if (!shift) msg('Регистрация готова: ' + out.fio + (car || plate ? '\nАвто появится в таблице при синхронизации' : ''));
+      if (!shift) {
+        msg('Регистрация готова: ' + out.fio +
+          (car || plate
+            ? (carSent ? '\nАвтомобиль записан на сервере'
+                       : '\nНет сети: автомобиль в очереди, уйдёт при синхронизации')
+            : ''));
+      }
     } else {
       msg(out.error || 'Не удалось зарегистрироваться');
     }
@@ -503,7 +515,7 @@ function renderSettings() {
   $('setRoleBlock').style.display = isSupervisor(me) ? 'block' : 'none';
   if (isSupervisor(me)) $('setRole').value = found.role || '';
   renderSettingsCars();
-  $('setPlBlock').innerHTML = plNumBlockHtml('set');
+  plRenderNumInto('setPlBlock', 'set');
   const panel = $('carPanel');
   if (panel) panel.style.display = 'none';
   const btn = $('setCarBtn');
@@ -576,24 +588,34 @@ async function saveCar() {
     $('carPanel').style.display = 'none';
     return;
   }
+  // id водителя: из me.id, а если пуст — из справочника по ФИО
+  const drvId = me.id || ((drivers.find(x => normFio(x.fio) === normFio(me.fio)) || {}).id || '');
   let r, saved;
   const editing = (carEditMode === 'edit' && carEditId) ? me.cars.find(x => x.id === carEditId) : null;
   if (editing) {
     // Правка по id авто на Cars
     r = await sendOrQueue([{ id: 'care-' + uid(), type: 'caredit', row: editing.row || null,
-      driverId: me.id, own: own, car: car, plate: plate,
+      driverId: drvId, own: own, car: car, plate: plate,
       owner: owner, addr: addr, tel: tel, ogrn: ogrn }]);
     editing.name = car; editing.plate = plate; editing.own = own;
     editing.owner = owner; editing.addr = addr; editing.tel = tel; editing.ogrn = ogrn;
     saved = editing;
   } else {
-    // Новый автомобиль: запись типа car, связь через id водителя
-    r = await sendOrQueue([{ id: 'car-' + uid(), type: 'car', driverId: me.id,
+    // Новый автомобиль: запись типа car, связь через id водителя.
+    // Сервер сам присвоит id (i-…/j-…), поле id пакета в колонку не попадает
+    r = await sendOrQueue([{ id: 'car-' + uid(), type: 'car', driverId: drvId,
       own: own, car: car, plate: plate,
       owner: owner, addr: addr, tel: tel, ogrn: ogrn }]);
-    saved = { id: '', driverId: me.id, own: own, name: car, plate: plate,
+    saved = { id: '', driverId: drvId, own: own, name: car, plate: plate,
       owner: owner, addr: addr, tel: tel, ogrn: ogrn, row: null };
     me.cars.push(saved);
+  }
+  // После успешной отправки подтягиваем справочник: сервер присвоил
+  // новому авто свой id — клиенту он нужен, чтобы править авто позже
+  if (r.sent && !saved.id) {
+    try { await loadDrivers(); } catch (e) {}
+    const fresh = (me.cars || []).find(c => c.name === car && c.plate === plate);
+    if (fresh) saved = fresh;
   }
   // Если смена открыта без отрезков — привязываем её к новому авто
   if (shift) {
