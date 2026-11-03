@@ -619,8 +619,9 @@ async function saveCar() {
   let r, saved;
   const editing = (carEditMode === 'edit' && carEditId) ? me.cars.find(x => x.id === carEditId) : null;
   if (editing) {
-    // Правка по id авто на Cars
-    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'caredit', row: editing.row || null,
+    // Правка по id авто на Cars: сам автомобиль в carId,
+    // id пакета (care-…) — только для лога и очереди
+    r = await sendOrQueue([{ id: 'care-' + uid(), type: 'caredit', carId: editing.id, row: editing.row || null,
       driverId: drvId, own: own, car: car, plate: plate,
       owner: owner, addr: addr, tel: tel, ogrn: ogrn }]);
     editing.name = car; editing.plate = plate; editing.own = own;
