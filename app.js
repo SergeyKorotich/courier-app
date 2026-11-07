@@ -2301,6 +2301,13 @@ function renderRouteInputs() {
 }
 
 async function routeBuildGo() {
+  const need = ['routeEnd', 'routeEndAddr', 'routeTime', 'routeDocs', 'routeExtra'];
+  const missing = need.filter(id => !$(id));
+  if (missing.length) {
+    msg('Файлы разсинхронизированы: на странице нет полей ' + missing.join(', ') +
+        '. Перезалей index.html и обнови страницу (Ctrl+Shift+R)');
+    return;
+  }
   const endKey = $('routeEnd').value;
   const endAddr = $('routeEndAddr').value.trim();
   const arriveBy = $('routeTime').value;
