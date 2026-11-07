@@ -908,13 +908,14 @@ function rememberRef(list, refType, name) {
 }
 
 // ================= ЭКРАНЫ =================
-const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'statsScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen'];
+const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'statsScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen', 'bossScreen'];
 function showScreen(name) {
   SCREENS.forEach(id => { $(id).style.display = 'none'; });
   $(name).style.display = 'block';
 }
 
 function goMenu() {
+  if (isBigBoss(me)) { openBoss(); return; }
   showScreen('menuScreen');
   renderDashboard();
 }
@@ -2087,3 +2088,161 @@ async function init() {
 }
 
 init();
+
+// ================= АНАЛИТИКА БИГБОСА =================
+// Роль «БигБос»: один экран, никаких меню, только выбор аналитики кнопками
+function isBigBoss(u) {
+  return !!u && String(u.role || '').trim().toLowerCase() === 'бигбос';
+}
+
+let bossKind = 'routes';   // 'routes' | 'doctors' | 'all'
+let bossDriver = '';       // '' — все водители
+let bossDoc = '';          // '' — все врачи и точки, иначе ФИО врача или имя точки
+
+// Вход БигБоса: сразу на свой экран, минуя обычное меню
+function openBoss() {
+  showScreen('bossScreen');
+  if (!$('bossDate').value) $('bossDate').value = todayISO();
+  if (!$('bossPeriod').value) $('bossPeriod').value = 'month';
+  renderBoss();
+}
+
+// Фильтр врача: ФИО врача либо имя точки (пусто — все)
+function bossDocMatches(v) {
+  if (!bossDoc) return true;
+  return normFio(v.doctor || '') === normFio(bossDoc) ||
+         String(v.place || '').trim().toLowerCase() === String(bossDoc).trim().toLowerCase();
+}
+
+function renderBoss() {
+  if (!me) return;
+  // Селекты перестраиваем каждый раз: свежие водители и врачи подхватываются
+  const drvFios = drivers.map(d => d.fio).sort(ruCmp);
+  if (bossDriver && !drvFios.some(f => normFio(f) === normFio(bossDriver))) bossDriver = '';
+  $('bossDriverSel').innerHTML = '<option value="">— все водители —</option>' +
+    drvFios.map(f => `<option value="${esc(f)}"${normFio(f) === normFio(bossDriver) ? ' selected' : ''}>${esc(f)}</option>`).join('');
+
+  const docNamesAll = Array.from(new Set(doctorsAll.map(v => v.doctor).filter(Boolean))).sort(ruCmp);
+  const placesAll = Array.from(new Set(doctorsAll.map(v => v.place).filter(Boolean))).sort(ruCmp);
+  const docKnown = docNamesAll.some(f => normFio(f) === normFio(bossDoc));
+  const placeKnown = placesAll.some(p => String(p) === bossDoc);
+  if (bossDoc && !docKnown && !placeKnown) bossDoc = '';
+  $('bossDocSel').innerHTML = '<option value="">— все врачи и точки —</option>' +
+    docNamesAll.map(f => `<option value="${esc(f)}"${normFio(f) === normFio(bossDoc) ? ' selected' : ''}>${esc(f)}</option>`).join('') +
+    placesAll.map(p => `<option value="${esc(p)}"${p === bossDoc ? ' selected' : ''}>📍 ${esc(p)}</option>`).join('');
+
+  // Фильтр врача/точки нужен только на вкладках «Врачи» и «Общая»
+  $('bossDocRow').style.display = bossKind === 'routes' ? 'none' : 'block';
+
+  const r = plPeriodRange($('bossDate').value || todayISO(), $('bossPeriod').value || 'month');
+  $('bossOut').innerHTML = bossKind === 'routes' ? bossRenderRoutes(r)
+    : bossKind === 'doctors' ? bossRenderDoctors(r)
+    : bossRenderAll(r);
+  $('bossTabs').innerHTML = `
+    <button class="${bossKind === 'routes' ? 'active' : ''}" onclick="bossSetKind('routes')">🚗 Маршруты</button>
+    <button class="${bossKind === 'doctors' ? 'active' : ''}" onclick="bossSetKind('doctors')">👩‍⚕️ Врачи</button>
+    <button class="${bossKind === 'all' ? 'active' : ''}" onclick="bossSetKind('all')">🧭 Общая</button>`;
+}
+
+function bossSetKind(k) { bossKind = k; renderBoss(); }
+function bossDrvChange() { bossDriver = $('bossDriverSel').value; renderBoss(); }
+function bossDocChange() { bossDoc = $('bossDocSel').value; renderBoss(); }
+
+// Опоздание в минутах: посадка минус назначенное время; null — если время не разобрать
+function bossLateMin(v) {
+  const a = hhmmToMin(v.timeAppointed), b = hhmmToMin(v.timeBoarding);
+  if (isNaN(a) || isNaN(b)) return null;
+  return b - a;
+}
+
+// Вкладка «Маршруты»: смены периода, фильтр по водителю
+function bossRenderRoutes(r) {
+  const rows = shiftsData
+    .filter(s => isoOf(s.date) >= r.from && isoOf(s.date) <= r.to)
+    .filter(s => !bossDriver || normFio(s.driverId || '') === normFio(bossDriver))
+    .sort((a, b) => isoOf(a.date) < isoOf(b.date) ? -1 : 1);
+  const totKm = rows.reduce((a, s) => a + (parseFloat(s.totalKm) || 0), 0);
+  const totRef = rows.reduce((a, s) => a + (parseFloat(s.refuel) || 0), 0);
+  const totMin = rows.reduce((a, s) => a + shiftMinutes(s), 0);
+  const body = rows.map(s => `
+    <div class="ref-item">
+      <b>${esc(ruFmtShort(s.date))}</b> — ${esc(s.driverId || '—')}<br>
+      Куда: ${esc(s.route || '—')}<br>
+      Врач: ${esc(s.doctor || '—')}<br>
+      Км: <b>${esc(s.totalKm || '0')}</b>, время: ${esc(s.timeStart || '—')}–${esc(s.timeEnd || '—')},
+      заправка: ${s.refuel ? esc(s.refuel) + ' л' : '—'},
+      продолжительность: ${esc(s.duration || minToHHMM(shiftMinutes(s)))}
+    </div>`).join('');
+  return `
+    <div class="card">
+      <h3>Итог: смен ${rows.length}, км ${totKm.toFixed(1)}, заправка ${totRef ? totRef.toFixed(1) + ' л' : '—'}, время ${minToHHMM(totMin)}</h3>
+    </div>
+    <div class="card">${body || '<div class="ref-item empty">Смен за период нет.</div>'}</div>`;
+}
+
+// Вкладка «Врачи»: перевозки периода, фильтр по врачу или точке
+function bossRenderDoctors(r) {
+  const rows = doctorsAll
+    .filter(v => v.date >= r.from && v.date <= r.to)
+    .filter(bossDocMatches)
+    .sort((a, b) => (a.date < b.date ? -1 : 1) || (hhmmToMin(a.timeAppointed) - hhmmToMin(b.timeAppointed)));
+  let lateCount = 0, lateSum = 0;
+  const body = rows.map(v => {
+    const diff = bossLateMin(v);
+    if (diff !== null && diff > 0) { lateCount++; lateSum += diff; }
+    const lateTxt = diff === null ? '—'
+      : diff > 0 ? `<b>+${diff} мин</b>` : diff < 0 ? `раньше на ${-diff} мин` : 'точно';
+    return `
+    <div class="ref-item">
+      <b>${esc(ruFmtShort(v.date))}</b> — ${esc(v.doctor || '—')} → ${esc(v.place || '—')}<br>
+      Назначено: ${esc(v.timeAppointed || '—')}, посадка: ${esc(v.timeBoarding || '—')}, опоздание: ${lateTxt}
+    </div>`;
+  }).join('');
+  return `
+    <div class="card">
+      <h3>Итог: перевозок ${rows.length}, опозданий ${lateCount}${lateCount ? ', среднее ' + Math.round(lateSum / lateCount) + ' мин' : ''}</h3>
+    </div>
+    <div class="card">${body || '<div class="ref-item empty">Перевозок за период нет.</div>'}</div>`;
+}
+
+// Вкладка «Общая»: смены с маршрутами + перевозимые ими врачи (связка по shiftId)
+function bossRenderAll(r) {
+  const rows = shiftsData
+    .filter(s => isoOf(s.date) >= r.from && isoOf(s.date) <= r.to)
+    .filter(s => !bossDriver || normFio(s.driverId || '') === normFio(bossDriver))
+    .sort((a, b) => isoOf(a.date) < isoOf(b.date) ? -1 : 1);
+  const totKm = rows.reduce((a, s) => a + (parseFloat(s.totalKm) || 0), 0);
+  const totMin = rows.reduce((a, s) => a + shiftMinutes(s), 0);
+  let lateCount = 0;
+  const body = rows.map(s => {
+    const docs = doctorsAll
+      .filter(v => v.shiftId && v.shiftId === s.id)
+      .filter(bossDocMatches)
+      .sort((a, b) => (hhmmToMin(a.timeAppointed) || 0) - (hhmmToMin(b.timeAppointed) || 0));
+    const docLines = docs.map(v => {
+      const diff = bossLateMin(v);
+      if (diff !== null && diff > 0) lateCount++;
+      const lateTxt = diff === null ? '—'
+        : diff > 0 ? `<b>+${diff} мин</b>` : diff < 0 ? `раньше на ${-diff} мин` : 'точно';
+      return `
+        <div class="ref-item" style="padding-left:14px">
+          ${esc(v.doctor || '—')} → ${esc(v.place || '—')},
+          назначено: ${esc(v.timeAppointed || '—')}, посадка: ${esc(v.timeBoarding || '—')}, опоздание: ${lateTxt}
+        </div>`;
+    }).join('');
+    return `
+    <div class="ref-item">
+      <b>${esc(ruFmtShort(s.date))}</b> — ${esc(s.driverId || '—')}<br>
+      Куда: ${esc(s.route || '—')}, км: <b>${esc(s.totalKm || '0')}</b>,
+      время: ${esc(s.timeStart || '—')}–${esc(s.timeEnd || '—')},
+      заправка: ${s.refuel ? esc(s.refuel) + ' л' : '—'},
+      продолжительность: ${esc(s.duration || minToHHMM(shiftMinutes(s)))}
+      <h4>Врачи</h4>${docLines || '<div class="empty">Перевозок в этой смене нет.</div>'}
+    </div>`;
+  }).join('');
+  return `
+    <div class="card">
+      <h3>Итог: смен ${rows.length}, км ${totKm.toFixed(1)}, время ${minToHHMM(totMin)}, опозданий ${lateCount}</h3>
+    </div>
+    <div class="card">${body || '<div class="ref-item empty">Смен за период нет.</div>'}</div>`;
+}

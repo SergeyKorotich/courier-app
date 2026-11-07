@@ -332,6 +332,31 @@
       <div class="muted">Тариф общий для всех водителей. Смены до указанной даты считаются по прежнему тарифу — итог на дашборде пересчитается сам.</div>
     </div>
   </div>
+  
+  <div id="bossScreen" style="display:none">
+    <div class="card">
+      <h3>📈 Аналитика</h3>
+      <div id="bossTabs" class="btnrow"></div>
+      <label>Дата периода</label>
+      <input id="bossDate" type="date" onchange="renderBoss()">
+      <label>Период</label>
+      <select id="bossPeriod" onchange="renderBoss()">
+        <option value="day">День</option>
+        <option value="week">Неделя</option>
+        <option value="month" selected>Месяц</option>
+      </select>
+      <div>
+        <label>Водитель</label>
+        <select id="bossDriverSel" onchange="bossDrvChange()"></select>
+      </div>
+      <div id="bossDocRow">
+        <label>Врач или точка</label>
+        <select id="bossDocSel" onchange="bossDocChange()"></select>
+      </div>
+    </div>
+    <div id="bossOut"></div>
+    <div class="card"><button class="small" onclick="logout()">Выйти</button></div>
+  </div>
 
   <!-- СТАТИСТИКА (СТАРШИЙ) -->
   <div id="reportScreen" style="display:none">
