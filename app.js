@@ -2304,13 +2304,15 @@ function routePtKey(p) {
     : String(p.name || '').toLowerCase().replace(/ё/g, 'е');
 }
 
+// Селект старт/финиш: офис, клиники и точки маршрута. Врачи сюда не входят —
+// они промежуточные точки в блоке «Врачи по пути»
 function fillRoutePointSelect(selId, wrapId, withOffice) {
-  let html = '';
-  if (withOffice) html += '<option value="__office">🛏 Офис</option>';
-  else html += '<option value="">— выбери конечную точку —</option>';
-  geoPoints.forEach(p => {
+  let html = withOffice
+    ? '<option value="__office">🛏 Офис</option>'
+    : '<option value="">— выбери конечную точку —</option>';
+  geoPoints.filter(p => p.type !== 'врач').forEach(p => {
     const l = p.type === 'клиника' ? (p.city ? p.city + ', ' : '') + p.name
-      : (p.type === 'врач' ? '👨‍⚕️ ' : '📍 ') + p.name;
+      : '📍 ' + p.name;
     html += `<option value="${esc(routePtKey(p))}">${esc(l)}</option>`;
   });
   html += '<option value="__new">➕ Другая точка (по адресу)…</option>';
