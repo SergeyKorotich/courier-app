@@ -380,8 +380,9 @@
         <select id="routeEnd"></select>
         <label>Время прибытия</label>
         <input id="routeTime" type="time">
-        <label>Врачи по пути</label>
+        <label>Врачи по пути (можно без врачей)</label>
         <div id="routeDocs"></div>
+        <button class="small" onclick="addDocRow()">➕ Добавить врача</button>
         <button onclick="routeBuildGo()">Построить маршрут</button>
         <button class="small" onclick="goMenu()">Назад</button>
       </div>
