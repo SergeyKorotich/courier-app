@@ -269,6 +269,7 @@ function enterApp(fio, role, driverId) {
     cars: myCars({ fio: found.fio || fio })   // поиск списка машин по ФИО
   };
   renderCars();
+  if (isBigBoss(me)) { openBoss(); return; }
   showScreen('menuScreen');
   renderDashboard();
   // При любом способе входа показываем состояние незавершённой смены
@@ -488,9 +489,6 @@ function selectCarById(id) {
   if (opt) { $('carSel').value = id; updateCarButtons(); return true; }
   return false;
 }
-
-// Подсказки «Откуда/Куда» — единый список точек:
-// деление город/междугородний ушло вместе с типом маршрута
 
 // Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
 function renderSegPoints() {}
@@ -947,6 +945,7 @@ function showStart() {
 function openWork() {
   if (shift) showWork(); else showStart();
 }
+
 // ================= ДАШБОРД =================
 function renderDashboard() {
   if (!me) return;
