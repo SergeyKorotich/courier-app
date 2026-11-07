@@ -2397,7 +2397,7 @@ function addDocRow() {
   row.id = 'docRow_' + n;
   row.style.margin = '6px 0';
   row.innerHTML = `
-    <input class="docNameIn" id="docNameIn_${n}" placeholder="Фамилия врача…" style="width:calc(100% - 44px)">
+    <input class="docNameIn" id="docNameIn_${n}" placeholder="Фамилия врача или название клиники" style="width:calc(100% - 44px)">
     <div class="ac-box" id="docNameAc_${n}"></div>
     <div class="docAddrSelWrap" id="docAddrSelWrap_${n}" style="display:none;margin-top:4px">
       <select class="docAddrSel" id="docAddrSel_${n}" onchange="docAddrNewToggle(${n})" style="width:calc(100% - 44px)"></select>
