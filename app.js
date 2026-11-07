@@ -2350,7 +2350,7 @@ function addDocRow() {
     <input class="docNameIn" id="docNameIn_${n}" placeholder="Фамилия врача…" style="width:calc(100% - 44px)">
     <div class="ac-box" id="docNameAc_${n}"></div>
     <div id="docAddrWrap_${n}" style="display:none">
-      <input class="routeAddr" id="docAddrIn_${n}" placeholder="Адрес врача (Ижевск, улица …)" style="width:calc(100% - 44px)">
+      <input class="routeAddr" id="docAddrIn_${n}" placeholder="Полный адрес: город, улица, дом" style="width:calc(100% - 44px)">
     </div>
     <button class="small" style="width:36px" onclick="removeDocRow(${n})">✕</button>`;
   wrap.appendChild(row);
