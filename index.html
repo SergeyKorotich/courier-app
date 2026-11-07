@@ -373,23 +373,20 @@
 
 
   <div id="routeScreen" style="display:none">
-    <div class="topbar">
-      <button class="secondary" onclick="goMenu()">← Меню</button>
-    </div>
     <div class="card">
       <h3>🗺️ Маршрут дня</h3>
       <label>Конечная точка (клиника)</label>
-      <select id="routeEnd">
+      <select id="routeEnd"></select>
       <label>…или адрес конечной точки (приоритет над списком)</label>
-      <input id="routeEndAddr" type="text" placeholder="Ижевск, улица Пушкинская, 216"></select>
+      <input id="routeEndAddr" type="text" placeholder="Ижевск, улица Пушкинская, 216">
       <label>Время прибытия</label>
       <input id="routeTime" type="time">
       <label>Врачи по пути</label>
-      <div id="routeDocs">
-        <label>Дополнительные адреса по пути (по одному в строке)</label>
-        <textarea id="routeExtra" rows="3"></textarea>
-      </div>
+      <div id="routeDocs"></div>
+      <label>Дополнительные адреса по пути (по одному в строке)</label>
+      <textarea id="routeExtra" rows="3"></textarea>
       <button onclick="routeBuildGo()">Построить маршрут</button>
+      <button class="small" onclick="goMenu()">Назад</button>
     </div>
     <div id="routeOut"></div>
   </div>
