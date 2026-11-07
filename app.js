@@ -2301,7 +2301,7 @@ function renderRouteInputs() {
   // у кого нет — рисуем рядом поле адреса
   const raw = (typeof doctorsContact !== 'undefined' && Array.isArray(doctorsContact)) ? doctorsContact : [];
   const docs = raw.map(d => d && typeof d === 'object'
-      ? { name: String(d.name || d.ФИО || '').trim(), addr: String(d.addr || d.адрес || '').trim() }
+      ? { name: String(d.fio || '').trim(), addr: String(d.addr || '').trim() }
       : { name: String(d || '').trim(), addr: '' })
     .filter(d => d.name)
     .sort((a, b) => ruCmp(a.name, b.name));
