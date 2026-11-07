@@ -1102,7 +1102,12 @@ function doctorTextFrom(docs, visitedPoints) {
 // пересчёт маршрута и текста врачей, обновление смены на сервере
 async function pushSegsToServer(okText) {
   const s = shiftsData.find(x => x.id === myShiftDetailId);
-  const odoStart = parseFloat(s && s.odoStart);
+  let odoStart = parseFloat(s && s.odoStart);
+  if (isNaN(odoStart) && mySegs.length) {
+    // Резерв: одометр начала = одометр первого отрезка минус его пробег
+    const first = mySegs[0];
+    odoStart = (parseFloat(first.kmAtB) || 0) - (parseFloat(first.segmentKm) || 0);
+  }
   if (isNaN(odoStart)) { msg('Нет одометра начала смены — обнови данные при сети'); return; }
   let acc = odoStart;
   mySegs.forEach(x => {
