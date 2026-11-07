@@ -2291,6 +2291,9 @@ function openRoute() {
   if (form) form.style.display = 'block';
 }
 
+// Выход с экрана маршрута в меню (кнопка «← Меню» в шапке обоих состояний)
+function routeExitMenu() { goMenu(); }
+
 function renderRouteInputs() {
   const clinics = geoPoints.filter(p => p.type === 'клиника')
     .map(p => ({ key: p.city + '|' + p.name, label: (p.city ? p.city + ', ' : '') + p.name }))
@@ -2416,6 +2419,5 @@ function renderRouteResult(d) {
     </div>
     <div class="card">
       <button onclick="openRoute()">Построить новый маршрут</button>
-      <button class="secondary" onclick="goMenu()">← В меню</button>
     </div>`;
 }
