@@ -344,8 +344,11 @@
   </div>
 
   <div id="bossScreen" style="display:none">
+    <div class="topbar">
+      <span class="title">📈 Аналитика</span>
+      <button class="secondary" onclick="doLogout()">Выйти</button>
+    </div>
     <div class="card">
-      <h3>📈 Аналитика</h3>
       <div id="bossTabs" class="btnrow"></div>
       <label>Дата периода</label>
       <input id="bossDate" type="date" onchange="renderBoss()">
@@ -365,7 +368,6 @@
       </div>
     </div>
     <div id="bossOut"></div>
-    <div class="card"><button class="small" onclick="logout()">Выйти</button></div>
   </div>
 
   <!-- СТАТИСТИКА (СТАРШИЙ) -->
