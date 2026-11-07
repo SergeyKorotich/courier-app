@@ -2287,6 +2287,8 @@ function openRoute() {
   showScreen('routeScreen');
   renderRouteInputs();
   $('routeOut').innerHTML = '';
+  const form = $('routeForm');
+  if (form) form.style.display = 'block';
 }
 
 function renderRouteInputs() {
@@ -2301,7 +2303,7 @@ function renderRouteInputs() {
 }
 
 async function routeBuildGo() {
-  const need = ['routeEnd', 'routeEndAddr', 'routeTime', 'routeDocs', 'routeExtra'];
+  const need = ['routeEnd', 'routeEndAddr', 'routeTime', 'routeDocs'];
   const missing = need.filter(id => !$(id));
   if (missing.length) {
     msg('Файлы разсинхронизированы: на странице нет полей ' + missing.join(', ') +
@@ -2312,8 +2314,7 @@ async function routeBuildGo() {
   const endAddr = $('routeEndAddr').value.trim();
   const arriveBy = $('routeTime').value;
   const docs = Array.prototype.slice.call($('routeDocs').querySelectorAll('input:checked')).map(i => i.value);
-  const extra = $('routeExtra').value.split(/\n|;/).map(s => s.trim()).filter(Boolean);
-  const all = docs.concat(extra);
+  const all = docs;
   if ((!endKey && !endAddr) || !arriveBy) { msg('Выбери конечную точку (или впиши адрес) и время прибытия'); return; }
   if (!all.length) { msg('Отметь хотя бы одного врача или впиши адрес'); return; }
   msg('Считаю маршрут…');
@@ -2327,8 +2328,10 @@ function renderRouteResult(d) {
   const rows = d.points.map((p, i) => `
     <div class="ref-item">
       <b>${i + 1}. ${esc(p.name)}</b><br>
-      Прибытие: <b>${minToHHMM(p.arrival)}</b>${i > 0 && i < d.points.length - 1 ? ' (стоянка 15 мин)' : ''}
+      Прибытие: <b>${minToHHMM(p.arrival)}</b>
     </div>`).join('');
+  const form = $('routeForm');
+  if (form) form.style.display = 'none';
   $('routeOut').innerHTML = `
     <div class="boss-tiles">
       ${bossTile(minToHHMM(d.departure), 'выехать')}
@@ -2340,5 +2343,8 @@ function renderRouteResult(d) {
       <a class="lnk" target="_blank" rel="noopener" href="${esc(d.url)}">🚕 Открыть маршрут в Навигаторе</a>
       ${d.mode === 'estimate' ? '<div class="empty">Время оценочное: впиши ROUTER_API_KEY на сервере для точного расчёта.</div>' : ''}
       ${d.tooLate ? '<div class="empty">⚠️ К этому времени не успеть — выезд фактически в 00:00.</div>' : ''}
+    </div>
+    <div class="card">
+      <button onclick="openRoute()">Построить новый маршрут</button>
     </div>`;
 }
