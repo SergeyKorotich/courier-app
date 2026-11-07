@@ -2416,5 +2416,6 @@ function renderRouteResult(d) {
     </div>
     <div class="card">
       <button onclick="openRoute()">Построить новый маршрут</button>
+      <button class="secondary" onclick="goMenu()">← В меню</button>
     </div>`;
 }
