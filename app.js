@@ -85,6 +85,7 @@ let carsByFio = {};
 let carEditMode = null;  // 'new' | 'edit'
 let carEditId = null;    // id авто на листе Cars (или null)
 let shiftsData = [];
+let doctorsAll = [];   // все перевозки (для аналитики БигБоса)
 let reportDetail = null;
 let myStats = null;      // данные личной статистики: { segs, doctors } по id смен
 let doctorsContact = [];
@@ -409,6 +410,7 @@ function applyRefs(data) {
     if (v && !rolesCluster.some(r => normFio(r) === normFio(v))) rolesCluster.push(v);
   });
   if (Array.isArray(data.tariffs)) tariffs = data.tariffs;
+  if (Array.isArray(data.doctorsAll)) doctorsAll = data.doctorsAll;
 
   // Подсказки врача — только из DoctorsRef (лист «Врачи» не подмешивается)
   renderSegPoints();
