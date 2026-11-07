@@ -2341,7 +2341,7 @@ function renderRouteResult(d) {
     <div class="card">${rows}</div>
     <div class="card">
       <a class="lnk" target="_blank" rel="noopener" href="${esc(d.url)}">🚕 Открыть маршрут в Навигаторе</a>
-      ${d.mode === 'estimate' ? '<div class="empty">Время оценочное: впиши ROUTER_API_KEY на сервере для точного расчёта.</div>' : ''}
+      ${d.mode === 'estimate' ? '<div class="empty">Время оценочное</div>' : ''}
       ${d.tooLate ? '<div class="empty">⚠️ К этому времени не успеть — выезд фактически в 00:00.</div>' : ''}
     </div>
     <div class="card">
