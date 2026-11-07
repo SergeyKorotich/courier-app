@@ -2297,13 +2297,26 @@ function renderRouteInputs() {
     .sort((a, b) => ruCmp(a.label, b.label));
   $('routeEnd').innerHTML = '<option value="">— выбери конечную точку —</option>' +
     clinics.map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
-  const docs = geoPoints.filter(p => p.type === 'врач').map(p => p.name).sort(ruCmp);
-  $('routeDocs').innerHTML = docs.map(d =>
-    `<label style="display:block"><input type="checkbox" value="${esc(d)}"> ${esc(d)}</label>`).join('');
+  // Все врачи из справочника; у кого в «Точках» есть координаты — data-geo="1",
+  // у кого нет — рисуем рядом поле адреса
+  const raw = (typeof doctorsContact !== 'undefined' && Array.isArray(doctorsContact)) ? doctorsContact : [];
+  const docs = raw.map(d => d && typeof d === 'object'
+      ? { name: String(d.name || d.ФИО || '').trim(), addr: String(d.addr || d.адрес || '').trim() }
+      : { name: String(d || '').trim(), addr: '' })
+    .filter(d => d.name)
+    .sort((a, b) => ruCmp(a.name, b.name));
+  const geoSet = new Set(geoPoints.filter(p => p.type === 'врач')
+    .map(p => p.name.toLowerCase().replace(/ё/g, 'е')));
+  $('routeDocs').innerHTML = docs.map(d => {
+    const hasGeo = geoSet.has(d.name.toLowerCase().replace(/ё/g, 'е'));
+    const addrField = hasGeo ? '' :
+      ` <input class="routeAddr" type="text" data-geo="0" data-doc="${esc(d.name)}" placeholder="Адрес врача (Ижевск, улица …)" style="margin:4px 0 8px 24px; width:calc(100% - 30px)">`;
+    return `<label style="display:block"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)}</label>${addrField}`;
+  }).join('');
 }
 
 async function routeBuildGo() {
-  const need = ['routeEnd', 'routeEndAddr', 'routeTime', 'routeDocs'];
+  const need = ['routeEnd', 'routeTime', 'routeDocs'];
   const missing = need.filter(id => !$(id));
   if (missing.length) {
     msg('Файлы разсинхронизированы: на странице нет полей ' + missing.join(', ') +
@@ -2311,14 +2324,23 @@ async function routeBuildGo() {
     return;
   }
   const endKey = $('routeEnd').value;
-  const endAddr = $('routeEndAddr').value.trim();
   const arriveBy = $('routeTime').value;
-  const docs = Array.prototype.slice.call($('routeDocs').querySelectorAll('input:checked')).map(i => i.value);
-  const all = docs;
-  if ((!endKey && !endAddr) || !arriveBy) { msg('Выбери конечную точку (или впиши адрес) и время прибытия'); return; }
-  if (!all.length) { msg('Отметь хотя бы одного врача или впиши адрес'); return; }
+  const docs = [];
+  let needAddr = false;
+  $('routeDocs').querySelectorAll('input[type="checkbox"]:checked').forEach(chk => {
+    // Поле адреса в списке есть только у врачей без координат (data-geo="0")
+    const inp = $('routeDocs').querySelector(
+      'input.routeAddr[data-geo="0"][data-doc="' + chk.value.replace(/"/g, '\\"') + '"]');
+    const addr = inp ? inp.value.trim() : '';
+    if (inp && !addr) needAddr = true;
+    docs.push({ name: chk.value, addr: addr });
+  });
+  if (!endKey) { msg('Выбери конечную точку'); return; }
+  if (!arriveBy) { msg('Укажи время прибытия'); return; }
+  if (!docs.length) { msg('Отметь хотя бы одного врача'); return; }
+  if (needAddr) { msg('У отмеченного врача без координат впиши адрес'); return; }
   msg('Считаю маршрут…');
-  const d = await serverAuth('routeBuild', { endKey: endKey, endAddr: endAddr, arriveBy: arriveBy, docs: all });
+  const d = await serverAuth('routeBuild', { endKey: endKey, arriveBy: arriveBy, docs: docs });
   if (!d || !d.ok) { msg('Ошибка: ' + ((d && d.error) || 'сервер')); return; }
   renderRouteResult(d);
   msg('');
