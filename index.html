@@ -111,6 +111,16 @@
     }
     .ac-item { padding: 8px 10px; cursor: pointer; font-size: 15px; }
     .ac-item:hover { background: var(--chip); }
+    /* Дашборд БигБоса: плитки сводки и мини-график */
+    .boss-tiles { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:10px 0; }
+    .boss-tile { background:#f2f5fa; border-radius:10px; padding:10px 6px; text-align:center; }
+    .boss-tile .num { font-size:22px; font-weight:700; }
+    .boss-tile .cap { font-size:12px; color:#667; }
+    .boss-bars { margin:10px 0 4px; }
+    .boss-bar { display:flex; align-items:center; gap:8px; margin:4px 0; }
+    .boss-bar .lbl { width:86px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .boss-bar .track { flex:1; background:#e8edf5; border-radius:6px; height:16px; overflow:hidden; }
+    .boss-bar .fill { background:#3b78e7; height:16px; border-radius:6px; color:#fff; font-size:11px; line-height:16px; padding-left:6px; white-space:nowrap; }
   </style>
 </head>
 <body>
@@ -332,7 +342,7 @@
       <div class="muted">Тариф общий для всех водителей. Смены до указанной даты считаются по прежнему тарифу — итог на дашборде пересчитается сам.</div>
     </div>
   </div>
-  
+
   <div id="bossScreen" style="display:none">
     <div class="card">
       <h3>📈 Аналитика</h3>

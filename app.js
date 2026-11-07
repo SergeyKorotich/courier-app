@@ -2159,7 +2159,22 @@ function bossLateMin(v) {
   return b - a;
 }
 
-// Вкладка «Маршруты»: смены периода, фильтр по водителю
+// Плитка сводки
+function bossTile(num, cap) {
+  return `<div class="boss-tile"><div class="num">${num}</div><div class="cap">${cap}</div></div>`;
+}
+
+// Полоса мини-графика: подпись + длина по максимуму серии
+function bossBars(items) {
+  const max = Math.max(1, ...items.map(x => x.v));
+  return items.length ? `<div class="boss-bars">` + items.map(x => `
+    <div class="boss-bar">
+      <div class="lbl">${esc(x.l)}</div>
+      <div class="track"><div class="fill" style="width:${Math.round(x.v / max * 100)}%">${x.t}</div></div>
+    </div>`).join('') + `</div>` : '';
+}
+
+// Вкладка «Маршруты»: дашборд — плитки, полоски по дням, детализация
 function bossRenderRoutes(r) {
   const rows = shiftsData
     .filter(s => isoOf(s.date) >= r.from && isoOf(s.date) <= r.to)
@@ -2168,32 +2183,46 @@ function bossRenderRoutes(r) {
   const totKm = rows.reduce((a, s) => a + (parseFloat(s.totalKm) || 0), 0);
   const totRef = rows.reduce((a, s) => a + (parseFloat(s.refuel) || 0), 0);
   const totMin = rows.reduce((a, s) => a + shiftMinutes(s), 0);
+  // Полоски по дням: км смены на дату
+  const byDay = {};
+  rows.forEach(s => {
+    const k = isoOf(s.date);
+    byDay[k] = (byDay[k] || 0) + (parseFloat(s.totalKm) || 0);
+  });
+  const bars = Object.keys(byDay).sort().map(d =>
+    ({ l: ruFmtShort(d), v: byDay[d], t: byDay[d].toFixed(1) + ' км' }));
   const body = rows.map(s => `
     <div class="ref-item">
       <b>${esc(ruFmtShort(s.date))}</b> — ${esc(s.driverId || '—')}<br>
-      Куда: ${esc(s.route || '—')}<br>
-      Врач: ${esc(s.doctor || '—')}<br>
-      Км: <b>${esc(s.totalKm || '0')}</b>, время: ${esc(s.timeStart || '—')}–${esc(s.timeEnd || '—')},
+      Куда: ${esc(s.route || '—')}, км: <b>${esc(s.totalKm || '0')}</b>,
+      время: ${esc(s.timeStart || '—')}–${esc(s.timeEnd || '—')},
       заправка: ${s.refuel ? esc(s.refuel) + ' л' : '—'},
       продолжительность: ${esc(s.duration || minToHHMM(shiftMinutes(s)))}
     </div>`).join('');
   return `
-    <div class="card">
-      <h3>Итог: смен ${rows.length}, км ${totKm.toFixed(1)}, заправка ${totRef ? totRef.toFixed(1) + ' л' : '—'}, время ${minToHHMM(totMin)}</h3>
+    <div class="boss-tiles">
+      ${bossTile(rows.length, 'смен')}
+      ${bossTile(totKm.toFixed(1), 'км всего')}
+      ${bossTile(totRef ? totRef.toFixed(1) + ' л' : '—', 'заправка')}
+      ${bossTile(minToHHMM(totMin), 'время в пути')}
     </div>
+    <div class="card">${bossBars(bars)}</div>
     <div class="card">${body || '<div class="ref-item empty">Смен за период нет.</div>'}</div>`;
 }
 
-// Вкладка «Врачи»: перевозки периода, фильтр по врачу или точке
+// Вкладка «Врачи»: плитки + полоски по врачам (перевозки), детализация ниже
 function bossRenderDoctors(r) {
   const rows = doctorsAll
     .filter(v => v.date >= r.from && v.date <= r.to)
     .filter(bossDocMatches)
     .sort((a, b) => (a.date < b.date ? -1 : 1) || (hhmmToMin(a.timeAppointed) - hhmmToMin(b.timeAppointed)));
   let lateCount = 0, lateSum = 0;
+  const byDoc = {};
   const body = rows.map(v => {
     const diff = bossLateMin(v);
     if (diff !== null && diff > 0) { lateCount++; lateSum += diff; }
+    const key = v.doctor || v.place || '—';
+    byDoc[key] = (byDoc[key] || 0) + 1;
     const lateTxt = diff === null ? '—'
       : diff > 0 ? `<b>+${diff} мин</b>` : diff < 0 ? `раньше на ${-diff} мин` : 'точно';
     return `
@@ -2202,14 +2231,19 @@ function bossRenderDoctors(r) {
       Назначено: ${esc(v.timeAppointed || '—')}, посадка: ${esc(v.timeBoarding || '—')}, опоздание: ${lateTxt}
     </div>`;
   }).join('');
+  const bars = Object.keys(byDoc).sort(ruCmp).map(d =>
+    ({ l: d, v: byDoc[d], t: String(byDoc[d]) }));
   return `
-    <div class="card">
-      <h3>Итог: перевозок ${rows.length}, опозданий ${lateCount}${lateCount ? ', среднее ' + Math.round(lateSum / lateCount) + ' мин' : ''}</h3>
+    <div class="boss-tiles">
+      ${bossTile(rows.length, 'перевозок')}
+      ${bossTile(lateCount, 'опозданий')}
+      ${bossTile(lateCount ? Math.round(lateSum / lateCount) + ' мин' : '—', 'среднее опоздание')}
     </div>
+    <div class="card">${bossBars(bars)}</div>
     <div class="card">${body || '<div class="ref-item empty">Перевозок за период нет.</div>'}</div>`;
 }
 
-// Вкладка «Общая»: смены с маршрутами + перевозимые ими врачи (связка по shiftId)
+// Вкладка «Общая»: плитки сводки + смены с вложенными врачами (связка по shiftId)
 function bossRenderAll(r) {
   const rows = shiftsData
     .filter(s => isoOf(s.date) >= r.from && isoOf(s.date) <= r.to)
@@ -2245,8 +2279,11 @@ function bossRenderAll(r) {
     </div>`;
   }).join('');
   return `
-    <div class="card">
-      <h3>Итог: смен ${rows.length}, км ${totKm.toFixed(1)}, время ${minToHHMM(totMin)}, опозданий ${lateCount}</h3>
+    <div class="boss-tiles">
+      ${bossTile(rows.length, 'смен')}
+      ${bossTile(totKm.toFixed(1), 'км всего')}
+      ${bossTile(minToHHMM(totMin), 'время в пути')}
+      ${bossTile(lateCount, 'опозданий')}
     </div>
     <div class="card">${body || '<div class="ref-item empty">Смен за период нет.</div>'}</div>`;
 }
