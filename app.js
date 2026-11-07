@@ -2326,7 +2326,7 @@ function routePointChange(selId, wrapId) {
 
 function renderRouteInputs() {
   fillRoutePointSelect('routeStart', 'routeStartNew', true);
-  fillRoutePointSelect('routeEnd', 'routeEndNew', false);
+  fillRoutePointSelect('routeEnd', 'routeEndNew', true);
   $('routeDocs').innerHTML = '';
   addDocRow();
 }
