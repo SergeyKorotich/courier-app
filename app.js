@@ -1051,7 +1051,7 @@ function renderShiftDetail() {
   const sumKm = mySegs.reduce((a, x) => a + x.segmentKm, 0);
   const segRows = mySegs.map(x => `
     <div class="ref-item">
-      <b>${esc(x.from)} → ${esc(x.to)}</b>, одометр: ${esc(x.kmAtB)}, пробег: ${esc(x.segmentKm)} км
+      <b>${esc(x.from)} → ${esc(x.to)}</b>, одометр от начала смены: ${esc(x.kmAtB)}, пробег отрезка: ${esc(x.segmentKm)} км
       <a class="edit" href="#" onclick="editSegRow('${escJsName(x.id)}');return false">✎</a>
       <a class="edit" href="#" onclick="deleteSegRow('${escJsName(x.id)}');return false">🗑</a>
     </div>`).join('');

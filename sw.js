@@ -1,5 +1,5 @@
 // Увеличиваем версию при КАЖДОЙ правке этого файла или кэшируемой статики
-const CACHE = 'kuryer-v41';
+const CACHE = 'kuryer-v42';
 
 // app.js здесь НЕТ — он грузится по сети (network-first)
 const ASSETS = [
