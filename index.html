@@ -179,6 +179,7 @@
       <button onclick="openWork()">📝 Запись смены</button>
       <button onclick="openMyStats()">📈 Моя статистика</button>
       <button onclick="openPl()">🧾 Путевые листы</button>
+      <button onclick="openRoute()">🗺️ Маршрут дня</button>
       <button id="supBtn" style="display:none" onclick="openReport()">📊 Статистика всех водителей</button>
       <button class="secondary" onclick="openRefs()">🗂 Справочник врачей и клиник</button>
       <button class="secondary" onclick="openSettings()">⚙ Настройки</button>
@@ -368,6 +369,29 @@
       </div>
     </div>
     <div id="bossOut"></div>
+  </div>
+
+
+  <div id="routeScreen" style="display:none">
+    <div class="topbar">
+      <button class="secondary" onclick="goMenu()">← Меню</button>
+    </div>
+    <div class="card">
+      <h3>🗺️ Маршрут дня</h3>
+      <label>Конечная точка (клиника)</label>
+      <select id="routeEnd">
+      <label>…или адрес конечной точки (приоритет над списком)</label>
+      <input id="routeEndAddr" type="text" placeholder="Ижевск, улица Пушкинская, 216"></select>
+      <label>Время прибытия</label>
+      <input id="routeTime" type="time">
+      <label>Врачи по пути</label>
+      <div id="routeDocs">
+        <label>Дополнительные адреса по пути (по одному в строке)</label>
+        <textarea id="routeExtra" rows="3"></textarea>
+      </div>
+      <button onclick="routeBuildGo()">Построить маршрут</button>
+    </div>
+    <div id="routeOut"></div>
   </div>
 
   <!-- СТАТИСТИКА (СТАРШИЙ) -->

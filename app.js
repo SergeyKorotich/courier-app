@@ -86,6 +86,7 @@ let carEditMode = null;  // 'new' | 'edit'
 let carEditId = null;    // id авто на листе Cars (или null)
 let shiftsData = [];
 let doctorsAll = [];   // все перевозки (для аналитики БигБоса)
+let geoPoints = [];   // точки маршрута: база, врачи, клиники (координаты из справочников)
 let reportDetail = null;
 let myStats = null;      // данные личной статистики: { segs, doctors } по id смен
 let doctorsContact = [];
@@ -412,6 +413,7 @@ function applyRefs(data) {
   });
   if (Array.isArray(data.tariffs)) tariffs = data.tariffs;
   if (Array.isArray(data.doctorsAll)) doctorsAll = data.doctorsAll;
+  if (Array.isArray(data.geoPoints)) geoPoints = data.geoPoints;
 
   // Подсказки врача — только из DoctorsRef (лист «Врачи» не подмешивается)
   renderSegPoints();
@@ -488,9 +490,7 @@ function selectCarById(id) {
   const opt = Array.from($('carSel').options).find(o => o.value === id);
   if (opt) { $('carSel').value = id; updateCarButtons(); return true; }
   return false;
-}
-
-// Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
+}// Заполнители <datalist> не нужны: подсказки теперь делает механизм ac
 function renderSegPoints() {}
 
 // ============ ПОДСКАЗКИ ПОЛЕЙ: строго по началу названия ============
@@ -908,7 +908,7 @@ function rememberRef(list, refType, name) {
 }
 
 // ================= ЭКРАНЫ =================
-const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'statsScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen', 'bossScreen'];
+const SCREENS = ['loginScreen', 'menuScreen', 'workScreen', 'statsScreen', 'reportScreen', 'refsScreen', 'plScreen', 'settingsScreen', 'bossScreen', 'routeScreen'];
 function showScreen(name) {
   SCREENS.forEach(id => { $(id).style.display = 'none'; });
   $(name).style.display = 'block';
@@ -944,9 +944,7 @@ function showStart() {
 
 function openWork() {
   if (shift) showWork(); else showStart();
-}
-
-// ================= ДАШБОРД =================
+}// ================= ДАШБОРД =================
 function renderDashboard() {
   if (!me) return;
   const month = todayISO().slice(0, 7);
@@ -1421,9 +1419,7 @@ function renderRefsDoc() {
       ${d.route ? `<a class="lnk" target="_blank" rel="noopener" href="${esc(d.route)}">🧭 маршрут</a>` : ''}
     </div>`).join('')
     : '<div class="ref-item empty">Врач не найден.</div>';
-}
-
-// --- Форма врача: добавление и правка ---
+}// --- Форма врача: добавление и правка ---
 function openDocForm(mode, key) {
   docEditKey = mode === 'edit' ? key : null;
   const d = docEditKey ? doctorsContact.find(x => x.key === docEditKey) : null;
@@ -1968,9 +1964,7 @@ async function plNumSave(ctx) {
     : 'Нет сети: сохранено в телефоне и применится при синхронизации.\nФормирование PDF станет доступно после синхронизации.');
   plRenderNumInto('plNumBlock', 'pl');
   plRenderNumInto('setPlBlock', 'set');
-}
-
-function plRenderList() {
+}function plRenderList() {
   localStorage.setItem(PL_EMAIL_KEY, $('plEmail').value.trim());
   const r = plPeriodRange($('plDate').value || todayISO(), $('plPeriod').value);
   if (!r) { $('plList').innerHTML = ''; return; }
@@ -2283,4 +2277,61 @@ function bossRenderAll(r) {
       ${bossTile(lateCount, 'опозданий')}
     </div>
     <div class="card">${body || '<div class="ref-item empty">Смен за период нет.</div>'}</div>`;
+}
+
+// ================= МАРШРУТ ДНЯ =================
+// Построение маршрута: сервер оптимизирует порядок врачей (старт и конец
+// фиксированы) и возвращает время прибытия на каждую точку + ссылку
+// на Яндекс Навигатор
+function openRoute() {
+  showScreen('routeScreen');
+  renderRouteInputs();
+  $('routeOut').innerHTML = '';
+}
+
+function renderRouteInputs() {
+  const clinics = geoPoints.filter(p => p.type === 'клиника')
+    .map(p => ({ key: p.city + '|' + p.name, label: (p.city ? p.city + ', ' : '') + p.name }))
+    .sort((a, b) => ruCmp(a.label, b.label));
+  $('routeEnd').innerHTML = '<option value="">— выбери конечную точку —</option>' +
+    clinics.map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
+  const docs = geoPoints.filter(p => p.type === 'врач').map(p => p.name).sort(ruCmp);
+  $('routeDocs').innerHTML = docs.map(d =>
+    `<label style="display:block"><input type="checkbox" value="${esc(d)}"> ${esc(d)}</label>`).join('');
+}
+
+async function routeBuildGo() {
+  const endKey = $('routeEnd').value;
+  const endAddr = $('routeEndAddr').value.trim();
+  const arriveBy = $('routeTime').value;
+  const docs = Array.prototype.slice.call($('routeDocs').querySelectorAll('input:checked')).map(i => i.value);
+  const extra = $('routeExtra').value.split(/\n|;/).map(s => s.trim()).filter(Boolean);
+  const all = docs.concat(extra);
+  if ((!endKey && !endAddr) || !arriveBy) { msg('Выбери конечную точку (или впиши адрес) и время прибытия'); return; }
+  if (!all.length) { msg('Отметь хотя бы одного врача или впиши адрес'); return; }
+  msg('Считаю маршрут…');
+  const d = await serverAuth('routeBuild', { endKey: endKey, endAddr: endAddr, arriveBy: arriveBy, docs: all });
+  if (!d || !d.ok) { msg('Ошибка: ' + ((d && d.error) || 'сервер')); return; }
+  renderRouteResult(d);
+  msg('');
+}
+
+function renderRouteResult(d) {
+  const rows = d.points.map((p, i) => `
+    <div class="ref-item">
+      <b>${i + 1}. ${esc(p.name)}</b><br>
+      Прибытие: <b>${minToHHMM(p.arrival)}</b>${i > 0 && i < d.points.length - 1 ? ' (стоянка 15 мин)' : ''}
+    </div>`).join('');
+  $('routeOut').innerHTML = `
+    <div class="boss-tiles">
+      ${bossTile(minToHHMM(d.departure), 'выехать')}
+      ${bossTile(minToHHMM(d.arriveEnd), 'прибытие в конец')}
+      ${bossTile(d.totalKm ? d.totalKm + ' км' : '—', 'протяжённость')}
+    </div>
+    <div class="card">${rows}</div>
+    <div class="card">
+      <a class="lnk" target="_blank" rel="noopener" href="${esc(d.url)}">🚕 Открыть маршрут в Навигаторе</a>
+      ${d.mode === 'estimate' ? '<div class="empty">Время оценочное: впиши ROUTER_API_KEY на сервере для точного расчёта.</div>' : ''}
+      ${d.tooLate ? '<div class="empty">⚠️ К этому времени не успеть — выезд фактически в 00:00.</div>' : ''}
+    </div>`;
 }
