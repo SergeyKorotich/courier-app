@@ -916,6 +916,7 @@ function showScreen(name) {
 
 function goMenu() {
   if (isBigBoss(me)) { openBoss(); return; }
+  console.log('DEBUG goMenu: role =', me && me.role, '| isBigBoss =', isBigBoss(me));
   showScreen('menuScreen');
   renderDashboard();
 }
