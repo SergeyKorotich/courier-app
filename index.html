@@ -316,6 +316,21 @@
       <button class="small" onclick="openCarPanel('new')">➕ Добавить автомобиль</button>
       <button onclick="saveSettings()">Сохранить данные водителя</button>
     </div>
+    <div class="card" id="tariffCard" style="display:none">
+      <h3>💰 Тариф заработка</h3>
+      <div id="tariffList"></div>
+      <label>Новый тариф: действует с даты</label>
+      <input id="tariffFrom" type="date">
+      <label>Тип</label>
+      <select id="tariffType">
+        <option value="km">за км</option>
+        <option value="hour">за час</option>
+      </select>
+      <label>Сумма, ₽</label>
+      <input id="tariffSum" inputmode="decimal" placeholder="например, 18">
+      <button onclick="saveTariff()">Добавить тариф</button>
+      <div class="muted">Тариф общий для всех водителей. Смены до указанной даты считаются по прежнему тарифу — итог на дашборде пересчитается сам.</div>
+    </div>
   </div>
 
   <!-- СТАТИСТИКА (СТАРШИЙ) -->
@@ -368,7 +383,11 @@
       <label>ФИО</label>
       <input id="drvFio" placeholder="Иванов Иван Иванович">
       <label>Роль</label>
-      <input id="drvRole" placeholder="пусто — обычный; «старший» — статистика всех">
+      <select id="drvRoleSel" onchange="onDrvRoleChange()"></select>
+      <div id="drvRoleNewBlock" style="display:none">
+        <label>Новая роль</label>
+        <input id="drvRole" placeholder="введите название роли">
+      </div>
       <div id="drvPinBlock">
         <label>PIN (4–8 цифр) — сообщи водителю</label>
         <input id="drvPin" type="password" inputmode="numeric" placeholder="PIN">

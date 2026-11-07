@@ -88,6 +88,8 @@ let shiftsData = [];
 let reportDetail = null;
 let myStats = null;      // данные личной статистики: { segs, doctors } по id смен
 let doctorsContact = [];
+let rolesCluster = [];   // кластер ролей для выбора из списка
+let tariffs = [];        // история тарифов: {id, from, type: 'km'|'hour', sum}
 let clinics = [];
 // Формы справочника: null = добавление, ключ = правка
 let docEditKey = null;
@@ -401,6 +403,12 @@ function applyRefs(data) {
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
+  if (Array.isArray(data.roles)) rolesCluster = data.roles.slice();
+  drivers.forEach(d => {
+    const v = String(d.role || '').trim();
+    if (v && !rolesCluster.some(r => normFio(r) === normFio(v))) rolesCluster.push(v);
+  });
+  if (Array.isArray(data.tariffs)) tariffs = data.tariffs;
 
   // Подсказки врача — только из DoctorsRef (лист «Врачи» не подмешивается)
   renderSegPoints();
@@ -577,6 +585,7 @@ function renderSettings() {
   if (isSupervisor(me)) $('setRole').value = found.role || '';
   renderSettingsCars();
   plRenderNumInto('setPlBlock', 'set');
+  renderTariffs();
   const panel = $('carPanel');
   if (panel) panel.style.display = 'none';
   const btn = $('setCarBtn');
@@ -755,6 +764,67 @@ async function saveSettings() {
              : 'Нет сети: сохранено в телефоне, уйдёт в таблицу при синхронизации');
 }
 
+// Карточка тарифа видна только старшему
+function renderTariffs() {
+  const card = $('tariffCard');
+  if (!card || !me) return;
+  card.style.display = isSupervisor(me) ? 'block' : 'none';
+  if (!isSupervisor(me)) return;
+  const list = tariffs.slice().sort((a, b) => (a.from < b.from ? 1 : -1));
+  $('tariffList').innerHTML = list.length
+    ? list.map(t => `<div class="ref-item">с ${esc(ruFmtShort(t.from))} — ${t.type === 'km' ? 'за км' : 'за час'}: <b>${esc(t.sum)} ₽</b></div>`).join('')
+    : '<div class="ref-item empty">Тарифов нет — добавьте первый.</div>';
+}
+
+async function saveTariff() {
+  if (!me || !isSupervisor(me)) { msg('Тариф меняет только старший'); return; }
+  // type="date" отдаёт ISO «2026-11-07» — оставляем как есть:
+  // monthEarnings сравнивает даты смен в ISO, конвертация не нужна
+  const from = String($('tariffFrom').value || '').trim();
+  const tariffType = $('tariffType').value;
+  const sum = parseFloat(String($('tariffSum').value).replace(',', '.'));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !sum || sum <= 0) {
+    msg('Укажи дату и сумму тарифа'); return;
+  }
+  const rec = { id: 'tar-' + uid(), type: 'tariffadd', from: from, tariffType: tariffType, sum: sum };
+  msg('Сохраняю тариф…');
+  const r = await sendOrQueue([rec]);
+  tariffs.push({ id: rec.id, from: from, type: tariffType, sum: sum });
+  renderTariffs();
+  renderDashboard();
+  $('tariffSum').value = '';
+  msg(r.sent ? 'Тариф сохранён: с ' + ruFmtShort(from)
+             : 'Нет сети: тариф в очереди, уйдёт при синхронизации');
+}
+
+// Заработок месяца: смена относится к тарифу по дате смены; итог периода
+// умножается на тариф своего периода, периоды складываются в одну строку
+function monthEarnings(rows) {
+  if (!tariffs.length) return { total: 0, partsText: '' };
+  const sorted = tariffs.slice().sort((a, b) => (a.from < b.from ? -1 : 1));
+  let total = 0;
+  const parts = [];
+  sorted.forEach((t, i) => {
+    const next = (i + 1 < sorted.length) ? sorted[i + 1].from : '9999-99-99';
+    let qty = 0, n = 0;
+    rows.forEach(s => {
+      const d = isoOf(s.date);
+      if (d >= t.from && d < next) {
+        n++;
+        qty += (t.type === 'km') ? (parseFloat(s.totalKm) || 0) : (shiftMinutes(s) / 60);
+      }
+    });
+    if (!n) return;
+    total += qty * (t.sum || 0);
+    parts.push(
+      (t.type === 'km' ? qty.toFixed(1) + ' км' : qty.toFixed(1) + ' ч')
+      + ' × ' + t.sum + ' ₽'
+      + (n < rows.length ? ' (с ' + ruFmtShort(t.from) + ')' : '')
+    );
+  });
+  return { total: total, partsText: parts.join(' + ') };
+}
+
 // ================= ПОДСЧЁТЫ =================
 // Нормализация имени точки. В отрезках «Ижевск» НЕ подменяется «ОФИС» —
 // схлопывание ОФИС/Ижевск происходит только в общем маршруте (compressRoute)
@@ -887,6 +957,7 @@ function renderDashboard() {
   });
   // Видимый счётчик неотправленного — главный ответ на жалобу «я ввёл, а оно пропало»
   const queued = loadQueue().length;
+  const earn = monthEarnings(rows);
   $('dashCard').style.display = 'block';
   $('dashTitle').textContent = `📊 ${me.fio} — ${month}`;
   $('dashBody').innerHTML = `
@@ -894,6 +965,8 @@ function renderDashboard() {
     <div class="dash-row"><span>Пробег, км</span><span>${total.toFixed(1)}</span></div>
     <div class="dash-row"><span>Заправка, л</span><span>${refuel ? refuel.toFixed(1) : '—'}</span></div>
     <div class="dash-row"><span>Продолжительность смен</span><span>${minToHHMM(minutes)}</span></div>` +
+    (earn.total > 0 ? `<div class="dash-row"><span>💰 Заработок</span><span>${Math.round(earn.total)} ₽</span></div>` : '') +
+    (earn.partsText ? `<div class="muted" style="padding:0 0 6px">Расчёт: ${esc(earn.partsText)}</div>` : '') +
     (queued ? `<div class="dash-row"><span>⚠ Не отправлено записей</span><span>${queued}</span></div>` : '');
   $('supBtn').style.display = isSupervisor(me) ? 'block' : 'none';
 }
@@ -937,8 +1010,11 @@ function renderMyStats() {
   $('backBtn').style.display = 'none';
 }
 
-// Детали смены: отрезки + перевозки врачей, каждая строка правится
+// Детали смены: правка и удаление отрезков с каскадным пересчётом одометров,
+// удаление смены целиком вместе с перевозками врачей
 let myShiftDetailId = null;
+let mySegs = [];   // отрезки смены, открытой для правки
+let myDocs = [];   // перевозки этой же смены
 
 async function openMyShiftDetail(shiftId) {
   if (!shiftId) { msg('У этой смены нет id — обнови данные при сети'); return; }
@@ -961,14 +1037,25 @@ async function openMyShiftDetail(shiftId) {
     msg('Сбой запроса: ' + (e.message || e));
     return;
   }
-  // Пробег пересчитываем по отрезкам — так сразу видно результат правок
-  const sumKm = segs.reduce((a, x) => a + (parseFloat(x.km) || 0), 0);
-  const segRows = segs.length ? segs.map(x => `
+  mySegs = segs.map(x => ({
+    id: x.id, from: x.from, to: x.to,
+    kmAtB: parseFloat(x.kmAtB) || 0,
+    segmentKm: parseFloat(x.km) || 0,
+    ts: x.ts || ''
+  }));
+  myDocs = docs;
+  renderShiftDetail();
+}
+
+function renderShiftDetail() {
+  const sumKm = mySegs.reduce((a, x) => a + x.segmentKm, 0);
+  const segRows = mySegs.map(x => `
     <div class="ref-item">
-      <b>${esc(x.from)} → ${esc(x.to)}</b>, одометр: ${esc(x.kmAtB)}, пробег: ${esc(x.km)} км
-      <a class="edit" href="#" onclick="editSegRow('${escJsName(x.id)}','${escJsName(x.from)}','${escJsName(x.to)}','${escJsName(x.kmAtB)}','${escJsName(x.km)}');return false">✎</a>
-    </div>`).join('') : '<div class="ref-item empty">Отрезков нет.</div>';
-  const docRows = docs.length ? docs.map(x => `
+      <b>${esc(x.from)} → ${esc(x.to)}</b>, одометр: ${esc(x.kmAtB)}, пробег: ${esc(x.segmentKm)} км
+      <a class="edit" href="#" onclick="editSegRow('${escJsName(x.id)}');return false">✎</a>
+      <a class="edit" href="#" onclick="deleteSegRow('${escJsName(x.id)}');return false">🗑</a>
+    </div>`).join('');
+  const docRows = myDocs.length ? myDocs.map(x => `
     <div class="ref-item">
       <b>${esc(x.doctor)}</b> → ${esc(x.place || '—')},
       назначено: ${esc(x.timeAppointed || '—')}, посадка: ${esc(x.timeBoarding || '—')}
@@ -977,33 +1064,100 @@ async function openMyShiftDetail(shiftId) {
   $('statsBody').innerHTML = '';
   $('backBtn').style.display = 'block';
   $('statsDetail').innerHTML = `
-    <div class="card"><h3>Смена ${esc(shiftId)}</h3>
-      Отрезков: ${segs.length}, сумма пробега: ${sumKm.toFixed(1)} км
-      ${segs.length ? '<div class="empty">Правка отрезка пересчитает сумму; общий пробег смены в таблице обновится при следующей сдаче данных.</div>' : ''}
+    <div class="card"><h3>Смена ${esc(myShiftDetailId)}</h3>
+      Отрезков: ${mySegs.length}, сумма пробега: ${sumKm.toFixed(1)} км
+      ${mySegs.length ? '<div class="empty">Правка отрезка пересчитает одометры всех последующих отрезков и маршрут смены.</div>' : ''}
+      <button class="danger small" onclick="deleteShiftWhole()">🗑 Удалить смену целиком</button>
     </div>
-    <div class="card"><h4>Отрезки</h4>${segRows}</div>
+    <div class="card"><h4>Отрезки</h4>${segRows || '<div class="ref-item empty">Отрезков нет.</div>'}</div>
     <div class="card"><h4>Перевозимые врачи</h4>${docRows}</div>`;
 }
 
-function backToMyStats() {
-  myShiftDetailId = null;
-  renderMyStats();
+// Текст врачей смены из списка перевозок и посещённых точек
+// (тот же формат, что buildDoctorText при завершении смены)
+function doctorTextFrom(docs, visitedPoints) {
+  const pointSet = new Set(visitedPoints.map(p => String(p || '').trim().toUpperCase()));
+  const shownPlaces = new Set();
+  const entries = [];
+  (docs || []).forEach(v => {
+    const place = String(v.place || '').trim().toUpperCase();
+    if (!pointSet.has(place)) return;
+    const diff = hhmmToMin(v.timeBoarding) - hhmmToMin(v.timeAppointed);
+    let suffix = '';
+    if (diff > 0) suffix = ` (опоздание ${diff} мин)`;
+    else if (diff < 0) suffix = ` (раньше на ${-diff} мин)`;
+    const first = !shownPlaces.has(place);
+    shownPlaces.add(place);
+    entries.push({ place: place, text: (first ? place + ' ' : '') + v.doctor + ' ' + v.timeBoarding, suffix: suffix });
+  });
+  let text = '';
+  entries.forEach((e, i) => {
+    const sep = i === 0 ? '' : (e.place === entries[i - 1].place ? ', ' : '\n');
+    text += sep + e.text + e.suffix;
+  });
+  return text;
 }
 
-// Правка отрезка: форма подставляется в карточку строки
+// Отправка изменённого набора отрезков: каскад одометров от одометра начала,
+// пересчёт маршрута и текста врачей, обновление смены на сервере
+async function pushSegsToServer(okText) {
+  const s = shiftsData.find(x => x.id === myShiftDetailId);
+  const odoStart = parseFloat(s && s.odoStart);
+  if (isNaN(odoStart)) { msg('Нет одометра начала смены — обнови данные при сети'); return; }
+  let acc = odoStart;
+  mySegs.forEach(x => {
+    acc += (parseFloat(x.segmentKm) || 0);
+    x.kmAtB = Math.round(acc * 10) / 10;
+  });
+  const totalKm = mySegs.reduce((a, x) => a + (parseFloat(x.segmentKm) || 0), 0);
+  const routePoints = [];
+  mySegs.forEach(x => {
+    if (!routePoints.length) routePoints.push(x.from);
+    if (x.to !== x.from) routePoints.push(x.to);
+  });
+  const route = compressRoute(routePoints);
+  const visited = [];
+  mySegs.forEach(x => visited.push(x.from, x.to));
+  const doctorText = doctorTextFrom(myDocs, visited);
+  const rec = {
+    id: 'sgr-' + uid(), type: 'segmentsreplace', shiftId: myShiftDetailId,
+    segments: mySegs.map(x => ({
+      id: x.id, from: x.from, to: x.to, kmAtB: x.kmAtB, segmentKm: x.segmentKm, ts: x.ts
+    })),
+    odoEnd: odoStart + totalKm, totalKm: String(totalKm),
+    route: route, doctor: doctorText
+  };
+  msg('Сохраняю…');
+  const r = await sendOrQueue([rec]);
+  // Локально применяем сразу — дашборд и статистика пересчитаются
+  s.odoEnd = String(rec.odoEnd);
+  s.totalKm = String(totalKm);
+  s.route = route;
+  s.doctor = doctorText;
+  localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
+  renderDashboard();
+  renderMyStats();
+  renderShiftDetail();
+  msg(r.sent ? okText + ': одометры и маршрут пересчитаны'
+             : 'Нет сети: правка в очереди, уйдёт при синхронизации');
+}
+
+// Правка отрезка: меняем только сам отрезок; одометр пересчитается автоматически
 let segEditId = null;
 
-function editSegRow(id, from, to, kmAtB, km) {
+function editSegRow(id) {
+  const seg = mySegs.find(x => x.id === id);
+  if (!seg) { msg('Отрезок не найден'); return; }
   segEditId = id;
   const host = document.createElement('div');
   host.id = 'segEditCard';
   host.className = 'ref-item';
   host.innerHTML = `
     <b>Правка отрезка</b>
-    <label>Откуда</label><input id="segEFrom" value="${esc(from)}">
-    <label>Куда</label><input id="segETo" value="${esc(to)}">
-    <label>Одометр, км</label><input id="segEOdo" inputmode="decimal" value="${esc(kmAtB)}">
-    <label>Пробег, км</label><input id="segEKm" inputmode="decimal" value="${esc(km)}">
+    <label>Откуда</label><input id="segEFrom" value="${esc(seg.from)}">
+    <label>Куда</label><input id="segETo" value="${esc(seg.to)}">
+    <label>Пробег отрезка, км</label><input id="segEKm" inputmode="decimal" value="${esc(seg.segmentKm)}">
+    <div class="muted">Одометр этого и последующих отрезков пересчитается автоматически.</div>
     <button class="small" onclick="saveSegEdit()">Сохранить</button>
     <button class="small" onclick="document.getElementById('segEditCard').remove();segEditId=null;">Отмена</button>`;
   const detail = $('statsDetail');
@@ -1012,22 +1166,43 @@ function editSegRow(id, from, to, kmAtB, km) {
 }
 
 async function saveSegEdit() {
-  if (!segEditId || !myShiftDetailId) { msg('Нет отрезка для правки'); return; }
+  const seg = mySegs.find(x => x.id === segEditId);
+  if (!seg) { msg('Нет отрезка для правки'); return; }
   const from = $('segEFrom').value.trim();
   const to = $('segETo').value.trim();
-  const kmAtB = parseFloat(String($('segEOdo').value).replace(',', '.'));
   const km = parseFloat(String($('segEKm').value).replace(',', '.'));
-  if (!from || !to || isNaN(kmAtB) || kmAtB < 0 || isNaN(km) || km < 0) {
-    msg('Заполни все поля; значения — не отрицательные');
+  if (!from || !to || isNaN(km) || km < 0) {
+    msg('Заполни «Откуда», «Куда» и пробег; значения — не отрицательные');
     return;
   }
-  msg('Сохраняю отрезок…');
-  const r = await sendOrQueue([{
-    id: 'sge-' + uid(), type: 'segmentedit', segId: segEditId,
-    from: from, to: to, kmAtB: kmAtB, segmentKm: km
-  }]);
-  msg(r.sent ? 'Отрезок сохранён' : 'Нет сети: правка в очереди, уйдёт при синхронизации');
-  openMyShiftDetail(myShiftDetailId);
+  seg.from = from;
+  seg.to = to;
+  seg.segmentKm = km;
+  await pushSegsToServer('Отрезок сохранён');
+}
+
+function deleteSegRow(id) {
+  if (mySegs.length <= 1) {
+    msg('Последний отрезок удалить нельзя — смена без отрезков не существует.\nЕсли нужно убрать смену целиком — кнопка «Удалить смену целиком» выше.');
+    return;
+  }
+  if (!confirm('Удалить отрезок? Одометры последующих отрезков и маршрут пересчитаются.')) return;
+  mySegs = mySegs.filter(x => x.id !== id);
+  pushSegsToServer('Отрезок удалён');
+}
+
+async function deleteShiftWhole() {
+  if (!myShiftDetailId) return;
+  if (!confirm('Удалить смену целиком? Будут удалены отрезки и перевозки врачей, статистика пересчитается.')) return;
+  msg('Удаляю смену…');
+  const r = await sendOrQueue([{ id: 'shd-' + uid(), type: 'shiftdelete', shiftId: myShiftDetailId }]);
+  shiftsData = shiftsData.filter(x => x.id !== myShiftDetailId);
+  localStorage.setItem(SHIFTS_KEY, JSON.stringify(shiftsData));
+  myShiftDetailId = null;
+  renderMyStats();
+  renderDashboard();
+  msg(r.sent ? 'Смена удалена, статистика пересчитана'
+             : 'Нет сети: удаление в очереди, выполнится при синхронизации');
 }
 
 // Правка перевозки: форма подставляется в карточку строки
@@ -1403,7 +1578,7 @@ function openDrvForm(mode, key) {
   if (drvEditKey && !d) { msg('Водитель не найден'); return; }
   $('drvFormTitle').textContent = drvEditKey ? 'Правка водителя' : 'Новый водитель';
   $('drvFio').value = d ? (d.fio || '') : '';
-  $('drvRole').value = d ? (d.role || '') : '';
+  fillRoleSelect(d ? (d.role || '') : '');
   // PIN назначается только при добавлении; при правке не показываем и не меняем
   $('drvPin').value = '';
   $('drvPinBlock').style.display = drvEditKey ? 'none' : 'block';
@@ -1423,13 +1598,41 @@ function closeDrvForm() {
   drvEditKey = null;
 }
 
+// Кластер ролей: список с сервера + ранее введённые роли
+function fillRoleSelect(selected) {
+  const sel = $('drvRoleSel');
+  if (!sel) return; // разметка не обновлена — работает прежний ввод текстом
+  const roles = rolesCluster.slice().sort(ruCmp);
+  sel.innerHTML = '<option value="">— без роли —</option>' +
+    roles.map(v => `<option value="${esc(v)}"${normFio(v) === normFio(selected) ? ' selected' : ''}>${esc(v)}</option>`).join('') +
+    '<option value="__new">➕ Новая роль…</option>';
+  $('drvRoleNewBlock').style.display = 'none';
+  $('drvRole').value = '';
+}
+
+function onDrvRoleChange() {
+  const isNew = $('drvRoleSel') && $('drvRoleSel').value === '__new';
+  $('drvRoleNewBlock').style.display = isNew ? 'block' : 'none';
+  if (isNew) $('drvRole').focus();
+}
+
+function currentDrvRole() {
+  const sel = $('drvRoleSel');
+  if (!sel) return $('drvRole').value.trim();
+  return sel.value === '__new' ? $('drvRole').value.trim() : sel.value;
+}
+
 // Сохранение водителя: при добавлении — driver + PIN,
 // при правке — переименование (если ФИО изменилось), правка строки и профиль.
 // Офлайн: локальная правка + очередь, как у врачей и клиник
 async function saveDrvForm() {
   if (!me || !isSupervisor(me)) { msg('Только старший правит водителей'); return; }
   const fio = $('drvFio').value.trim().replace(/\s+/g, ' ');
-  const role = $('drvRole').value.trim();
+  const role = currentDrvRole();
+  if ($('drvRoleSel') && $('drvRoleSel').value === '__new' && !role) {
+    msg('Введи название новой роли или выбери из списка');
+    return;
+  }
   const snils = fmtSnils($('drvSnils').value.trim());
   const vu = fmtVu($('drvVu').value.trim());
   const vuDate = ruFromIso($('drvVuDate').value);
@@ -1468,6 +1671,7 @@ async function saveDrvForm() {
       snils: snils, vu: vu, vuDate: vuDate, klass: klass });
   }
   drivers.sort((a, b) => ruCmp(a.fio, b.fio));
+  if (role && !rolesCluster.some(r => normFio(r) === normFio(role))) rolesCluster.push(role);
   closeDrvForm();
   renderRefsDrv();
   renderLoginHints();
