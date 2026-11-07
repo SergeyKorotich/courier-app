@@ -1109,7 +1109,10 @@ async function pushSegsToServer(okText) {
     odoStart = (parseFloat(first.kmAtB) || 0) - (parseFloat(first.segmentKm) || 0);
   }
   if (isNaN(odoStart)) { msg('Нет одометра начала смены — обнови данные при сети'); return; }
-  let acc = odoStart;
+  // Одометр отрезка — накопленный пробег от начала смены (как на листе SegmentsAPI):
+  // первый отрезок = его пробег, далее сумма. Показание одометра машины
+  // на конец смены считается отдельно: odoStart + totalKm
+  let acc = 0;
   mySegs.forEach(x => {
     acc += (parseFloat(x.segmentKm) || 0);
     x.kmAtB = Math.round(acc * 10) / 10;
