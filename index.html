@@ -370,6 +370,7 @@
     </div>
     <div id="bossOut"></div>
   </div>
+
   <div id="routeScreen" style="display:none">
     <div class="topbar">
       <button class="secondary" onclick="routeExitMenu()">← Меню</button>
@@ -377,8 +378,22 @@
     <div id="routeForm">
       <div class="card">
         <h3>🗺️ Маршрут дня</h3>
-        <label>Конечная точка (клиника)</label>
-        <select id="routeEnd"></select>
+        <label>Начальная точка</label>
+        <select id="routeStart" onchange="routePointChange('routeStart','routeStartNew')"></select>
+        <div id="routeStartNew" style="display:none">
+          <label>Название точки (необязательно — запишется в справочник)</label>
+          <input id="routeStartName" placeholder="например, Склад">
+          <label>Адрес</label>
+          <input id="routeStartAddr" placeholder="город, улица, дом">
+        </div>
+        <label>Конечная точка</label>
+        <select id="routeEnd" onchange="routePointChange('routeEnd','routeEndNew')"></select>
+        <div id="routeEndNew" style="display:none">
+          <label>Название точки (необязательно — запишется в справочник)</label>
+          <input id="routeEndName" placeholder="например, Пункт выдачи">
+          <label>Адрес</label>
+          <input id="routeEndAddr" placeholder="город, улица, дом">
+        </div>
         <label>Время прибытия</label>
         <input id="routeTime" type="time">
         <label>Врачи по пути (можно без врачей)</label>

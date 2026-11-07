@@ -93,6 +93,7 @@ let doctorsContact = [];
 let rolesCluster = [];   // кластер ролей для выбора из списка
 let tariffs = [];        // история тарифов: {id, from, type: 'km'|'hour', sum}
 let clinics = [];
+let docAddresses = [];  // дополнительные адреса врачей с координатами
 // Формы справочника: null = добавление, ключ = правка
 let docEditKey = null;
 let clinicEditKey = null;
@@ -406,6 +407,7 @@ function applyRefs(data) {
   if (Array.isArray(data.docNames)) docNames = Array.from(new Set(data.docNames));
   if (Array.isArray(data.doctorsContact)) doctorsContact = data.doctorsContact;
   if (Array.isArray(data.clinics)) clinics = data.clinics;
+  if (Array.isArray(data.docAddresses)) docAddresses = data.docAddresses;
   if (Array.isArray(data.roles)) rolesCluster = data.roles.slice();
   drivers.forEach(d => {
     const v = String(d.role || '').trim();
@@ -2280,9 +2282,10 @@ function bossRenderAll(r) {
 }
 
 // ================= МАРШРУТ ДНЯ =================
-// Построение маршрута: сервер оптимизирует порядок врачей (старт и конец
-// фиксированы) и возвращает время прибытия на каждую точку + ссылку
-// на Яндекс Навигатор
+// Старт и финиш: офис (по умолчанию), клиники, врачи, произвольные точки
+// из справочника или новая точка по адресу. Врачи — промежуточные точки;
+// у врача с несколькими адресами адрес выбирается списком, новый адрес
+// дописывается в справочник на сервере вместе с координатами
 function openRoute() {
   showScreen('routeScreen');
   renderRouteInputs();
@@ -2294,20 +2297,39 @@ function openRoute() {
 // Выход с экрана маршрута в меню (кнопка «← Меню» в шапке обоих состояний)
 function routeExitMenu() { goMenu(); }
 
+// Ключ точки для селектов: у клиник «город|название», у остальных — название
+function routePtKey(p) {
+  return p.type === 'клиника'
+    ? ((p.city || '') + '|' + p.name).toLowerCase()
+    : String(p.name || '').toLowerCase().replace(/ё/g, 'е');
+}
+
+function fillRoutePointSelect(selId, wrapId, withOffice) {
+  let html = '';
+  if (withOffice) html += '<option value="__office">🛏 Офис</option>';
+  else html += '<option value="">— выбери конечную точку —</option>';
+  geoPoints.forEach(p => {
+    const l = p.type === 'клиника' ? (p.city ? p.city + ', ' : '') + p.name
+      : (p.type === 'врач' ? '👨‍⚕️ ' : '📍 ') + p.name;
+    html += `<option value="${esc(routePtKey(p))}">${esc(l)}</option>`;
+  });
+  html += '<option value="__new">➕ Другая точка (по адресу)…</option>';
+  $(selId).innerHTML = html;
+  $(wrapId).style.display = 'none';
+}
+
+function routePointChange(selId, wrapId) {
+  $(wrapId).style.display = $(selId).value === '__new' ? 'block' : 'none';
+}
+
 function renderRouteInputs() {
-  const clinics = geoPoints.filter(p => p.type === 'клиника')
-    .map(p => ({ key: p.city + '|' + p.name, label: (p.city ? p.city + ', ' : '') + p.name }))
-    .sort((a, b) => ruCmp(a.label, b.label));
-  $('routeEnd').innerHTML = '<option value="">— выбери конечную точку —</option>' +
-    clinics.map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
-  // Все врачи из справочника; у кого в «Точках» есть координаты — data-geo="1",
-  // у кого нет — рисуем рядом поле адреса
-  // Врачи добавляются по кнопке — начинаем с одной пустой строки
+  fillRoutePointSelect('routeStart', 'routeStartNew', true);
+  fillRoutePointSelect('routeEnd', 'routeEndNew', false);
   $('routeDocs').innerHTML = '';
   addDocRow();
 }
 
-// ===== Врачи маршрута: добавление по одному с подсказками =====
+// ===== Врачи маршрута: выбор врача → список его адресов или поле нового =====
 let docRowSeq = 0;
 
 // ФИО всех врачей справочника — источник подсказок
@@ -2323,7 +2345,7 @@ function findDocByName(name) {
     String((d && d.fio) || '').trim().toLowerCase().replace(/ё/g, 'е') === k) || null;
 }
 
-// Есть ли у врача координаты в «Точках»
+// Есть ли у врача координаты в «Врачи» (основной адрес)
 function docHasGeo(name) {
   const k = String(name || '').trim().toLowerCase().replace(/ё/g, 'е');
   if (!k) return false;
@@ -2331,13 +2353,36 @@ function docHasGeo(name) {
     String(p.name || '').trim().toLowerCase().replace(/ё/g, 'е') === k);
 }
 
-// Поле адреса: у врача без координат — показать, с координатами — скрыть.
-// strict=true (на blur): имя не из справочника — тоже просим адрес
-function toggleDocAddr(n, strict) {
-  const inp = $('docNameIn_' + n), wrap = $('docAddrWrap_' + n);
-  if (!inp || !wrap) return;
+// Дополнительные адреса врача из «Адреса врачей» (только с координатами)
+function docAddrList(name) {
+  const k = String(name || '').trim().toLowerCase().replace(/ё/g, 'е');
+  if (!k) return [];
+  return docAddresses
+    .filter(a => String(a.doctor || '').trim().toLowerCase().replace(/ё/g, 'е') === k &&
+      a.addr && a.lat !== null && a.lon !== null)
+    .map(a => String(a.addr));
+}
+
+// Интерфейс адреса врача: список адресов, если они есть, иначе поле ввода
+function docAddrUI(n, strict) {
+  const inp = $('docNameIn_' + n);
+  const selWrap = $('docAddrSelWrap_' + n), sel = $('docAddrSel_' + n);
+  const wrap = $('docAddrWrap_' + n);
+  if (!inp || !selWrap || !sel || !wrap) return;
   const v = inp.value.trim();
-  if (!v || docHasGeo(v)) { wrap.style.display = 'none'; return; }
+  if (!v) { selWrap.style.display = 'none'; wrap.style.display = 'none'; return; }
+  const addrs = docAddrList(v);
+  if (addrs.length) {
+    sel.innerHTML =
+      (docHasGeo(v) ? '<option value="">Основной адрес</option>' : '') +
+      addrs.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('') +
+      '<option value="__new">➕ Новый адрес…</option>';
+    selWrap.style.display = 'block';
+    wrap.style.display = 'none';
+    return;
+  }
+  selWrap.style.display = 'none';
+  if (docHasGeo(v)) { wrap.style.display = 'none'; return; }
   if (findDocByName(v) || strict) wrap.style.display = 'block';
 }
 
@@ -2352,14 +2397,23 @@ function addDocRow() {
   row.innerHTML = `
     <input class="docNameIn" id="docNameIn_${n}" placeholder="Фамилия врача…" style="width:calc(100% - 44px)">
     <div class="ac-box" id="docNameAc_${n}"></div>
-    <div id="docAddrWrap_${n}" style="display:none">
+    <div class="docAddrSelWrap" id="docAddrSelWrap_${n}" style="display:none;margin-top:4px">
+      <select class="docAddrSel" id="docAddrSel_${n}" onchange="docAddrNewToggle(${n})" style="width:calc(100% - 44px)"></select>
+    </div>
+    <div class="docAddrWrap" id="docAddrWrap_${n}" style="display:none;margin-top:4px">
       <input class="routeAddr" id="docAddrIn_${n}" placeholder="Полный адрес: город, улица, дом" style="width:calc(100% - 44px)">
     </div>
     <button class="small" style="width:36px" onclick="removeDocRow(${n})">✕</button>`;
   wrap.appendChild(row);
   attachPrefixAc('docNameIn_' + n, 'docNameAc_' + n, acRouteDocs);
-  $('docNameIn_' + n).addEventListener('input', () => toggleDocAddr(n, false));
-  $('docNameIn_' + n).addEventListener('change', () => toggleDocAddr(n, true));
+  $('docNameIn_' + n).addEventListener('input', () => docAddrUI(n, false));
+  $('docNameIn_' + n).addEventListener('change', () => docAddrUI(n, true));
+}
+
+function docAddrNewToggle(n) {
+  const sel = $('docAddrSel_' + n), wrap = $('docAddrWrap_' + n);
+  if (!sel || !wrap) return;
+  wrap.style.display = sel.value === '__new' ? 'block' : 'none';
 }
 
 function removeDocRow(n) {
@@ -2368,30 +2422,66 @@ function removeDocRow(n) {
 }
 
 async function routeBuildGo() {
-  const need = ['routeEnd', 'routeTime', 'routeDocs'];
+  const need = ['routeStart', 'routeStartNew', 'routeEnd', 'routeEndNew', 'routeTime', 'routeDocs'];
   const missing = need.filter(id => !$(id));
   if (missing.length) {
     msg('Файлы разсинхронизированы: на странице нет полей ' + missing.join(', ') +
         '. Перезалей index.html и обнови страницу (Ctrl+Shift+R)');
     return;
   }
-  const endKey = $('routeEnd').value;
   const arriveBy = $('routeTime').value;
-  const docs = [];
+  if (!arriveBy) { msg('Укажи время прибытия'); return; }
+
+  const payload = { action: 'routeBuild', arriveBy: arriveBy, docs: [] };
+
+  // Старт: офис по умолчанию, точка из справочника или новая по адресу
+  const sSel = $('routeStart').value;
+  if (sSel === '__new') {
+    const addr = $('routeStartAddr').value.trim();
+    if (!addr) { msg('У начальной точки укажи адрес'); return; }
+    payload.startAddr = addr;
+    payload.startName = $('routeStartName').value.trim();
+  } else if (sSel && sSel !== '__office') {
+    payload.startKey = sSel;
+  }
+
+  // Финиш: обязателен
+  const eSel = $('routeEnd').value;
+  if (eSel === '__new') {
+    const addr = $('routeEndAddr').value.trim();
+    if (!addr) { msg('У конечной точки укажи адрес'); return; }
+    payload.endAddr = addr;
+    payload.endName = $('routeEndName').value.trim();
+  } else if (eSel) {
+    payload.endKey = eSel;
+  } else {
+    msg('Выбери конечную точку'); return;
+  }
+
+  // Врачи: основной адрес без addr, выбранный — с адресом, новый — из поля
   let needAddr = false;
   $('routeDocs').querySelectorAll('.docRow').forEach(row => {
-    const name = row.querySelector('.docNameIn').value.trim();
-    if (!name) return; // пустую строку не отправляем
+    const inp = row.querySelector('.docNameIn');
+    const nm = inp ? inp.value.trim() : '';
+    if (!nm) return;
+    let addr = '';
+    const selWrap = row.querySelector('.docAddrSelWrap');
+    const sel = row.querySelector('.docAddrSel');
+    const addrWrap = row.querySelector('.docAddrWrap');
     const addrIn = row.querySelector('.routeAddr');
-    const addr = (docHasGeo(name)) ? '' : (addrIn ? addrIn.value.trim() : '');
-    if (!docHasGeo(name) && !addr) needAddr = true;
-    docs.push({ name: name, addr: addr });
+    if (selWrap && sel && selWrap.style.display !== 'none' &&
+        sel.value !== '' && sel.value !== '__new') {
+      addr = sel.value;
+    } else if (addrWrap && addrIn && addrWrap.style.display !== 'none') {
+      addr = addrIn.value.trim();
+    }
+    if (!docHasGeo(nm) && !addr) needAddr = true;
+    payload.docs.push({ name: nm, addr: addr });
   });
-  if (!endKey) { msg('Выбери конечную точку'); return; }
-  if (!arriveBy) { msg('Укажи время прибытия'); return; }
-  if (needAddr) { msg('У врача без координат впиши адрес'); return; }
+  if (needAddr) { msg('У врача без координат выбери или впиши адрес'); return; }
+
   msg('Считаю маршрут…');
-  const d = await serverAuth('routeBuild', { endKey: endKey, arriveBy: arriveBy, docs: docs });
+  const d = await serverAuth('routeBuild', payload);
   if (!d || !d.ok) { msg('Ошибка: ' + ((d && d.error) || 'сервер')); return; }
   renderRouteResult(d);
   msg('');
